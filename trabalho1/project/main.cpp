@@ -22,8 +22,8 @@ static float *dens, *dens_prev;
 // Function to allocate simulation data
 int allocate_data() {
   int size = (M + 2) * (N + 2) * (O + 2);
-  u = new float[size];https://github.com/jgbarbosa/3dfluid
-  v = nehttps://github.com/jgbarbosa/3dfluidw float[size];
+  u = new float[size];
+  v = new float[size];
   w = new float[size];
   u_prev = new float[size];
   v_prev = new float[size];
@@ -38,7 +38,7 @@ int allocate_data() {
   return 1;
 }
 
-// Functihttps://github.com/jgbarbosa/3dfluidon to clear the data (set all to zero)
+// Function to clear the data (set all to zero)
 void clear_data() {
   int size = (M + 2) * (N + 2) * (O + 2);
   for (int i = 0; i < size; i++) {
