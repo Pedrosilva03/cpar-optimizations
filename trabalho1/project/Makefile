@@ -1,4 +1,4 @@
-CPP = g++ -Wall -Wextra -lm -pg # -fexcess-precision=standard -ffloat-store
+CPP = g++ -Wall -Wextra -lm -pg 
 
 # Optimization Flags
 CFLAG_DEFAULT = -O2 -ffast-math
@@ -20,7 +20,7 @@ OUTPUT = fluid_sim
 all: $(OUTPUT)
 
 $(OUTPUT): $(SRCS)
-	$(CPP) $(CFLAG_DEFAULT) $(CFLAG_LTO) $(CFLAG_ALIGN) $(SRCS) -o $(OUTPUT)  # Default compilation without optimizations or profiling
+	$(CPP) $(CFLAG_DEFAULT) $(SRCS) -o $(OUTPUT)  # Default compilation without optimizations or profiling
 
 # O2 flags
 o2_vec: $(SRCS)
