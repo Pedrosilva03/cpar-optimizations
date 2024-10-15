@@ -54,23 +54,34 @@ void set_bnd(int M, int N, int O, int b, float *x) {
 }
 
 // Linear solve for implicit methods (diffusion)
-void lin_solve(int M, int N, int O, int b, float *x, float *x0, float a,
-               float c) {
+void lin_solve(int M, int N, int O, int b, float *x, float *x0, float a, float c) {
   for (int l = 0; l < LINEARSOLVERTIMES; l++) {
     for (int k = 1; k <= O; k++) {
       for (int j = 1; j <= N; j++) {
         for (int i = 1; i <= M; i++) {
-          x[IX(i, j, k)] = (x0[IX(i, j, k)] +
-                            a * (x[IX(i - 1, j, k)] + x[IX(i + 1, j, k)] +
-                                x[IX(i, j - 1, k)] + x[IX(i, j + 1, k)] +
-                                x[IX(i, j, k - 1)] + x[IX(i, j, k + 1)])) /
-                          c;
+          // Precompute index for the current position
+          int idx = IX(i, j, k);
+          int idx_left   = IX(i - 1, j, k);
+          int idx_right  = IX(i + 1, j, k);
+          int idx_down   = IX(i, j - 1, k);
+          int idx_up     = IX(i, j + 1, k);
+          int idx_back   = IX(i, j, k - 1);
+          int idx_front  = IX(i, j, k + 1);
+          
+          // Use local variables to reduce cache misses
+          float current_x0 = x0[idx];
+          float current_value = current_x0 + a * (x[idx_left] + x[idx_right] + 
+                                                    x[idx_down] + x[idx_up] + 
+                                                    x[idx_back] + x[idx_front]);
+
+          x[idx] = current_value / c;
         }
       }
     }
     set_bnd(M, N, O, b, x);
   }
 }
+
 
 
 // Diffusion step (uses implicit method)
