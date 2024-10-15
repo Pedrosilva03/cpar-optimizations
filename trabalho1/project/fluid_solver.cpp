@@ -55,33 +55,39 @@ void set_bnd(int M, int N, int O, int b, float *x) {
 
 // Linear solve for implicit methods (diffusion)
 void lin_solve(int M, int N, int O, int b, float *x, float *x0, float a, float c) {
-  for (int l = 0; l < LINEARSOLVERTIMES; l++) {
-    for (int k = 1; k <= O; k++) {
-      for (int j = 1; j <= N; j++) {
-        for (int i = 1; i <= M; i++) {
-          // Precompute index for the current position
-          int idx = IX(i, j, k);
-          int idx_left   = IX(i - 1, j, k);
-          int idx_right  = IX(i + 1, j, k);
-          int idx_down   = IX(i, j - 1, k);
-          int idx_up     = IX(i, j + 1, k);
-          int idx_back   = IX(i, j, k - 1);
-          int idx_front  = IX(i, j, k + 1);
-          
-          // Use local variables to reduce cache misses
-          float current_x0 = x0[idx];
-          float current_value = current_x0 + a * (x[idx_left] + x[idx_right] + 
-                                                    x[idx_down] + x[idx_up] + 
-                                                    x[idx_back] + x[idx_front]);
+    for (int l = 0; l < LINEARSOLVERTIMES; l++) {
+        for (int k = 1; k <= O; k++) {
+            for (int j = 1; j <= N; j++) {
+                // Introduce blocking to improve locality
+                for (int i = 1; i <= M; i++) {
+                    // Precompute index for the current position
+                    int idx = IX(i, j, k);
+                    int idx_left   = IX(i - 1, j, k);
+                    int idx_right  = IX(i + 1, j, k);
+                    int idx_down   = IX(i, j - 1, k);
+                    int idx_up     = IX(i, j + 1, k);
+                    int idx_back   = IX(i, j, k - 1);
+                    int idx_front  = IX(i, j, k + 1);
+                    
+                    // Use local variables to reduce cache misses
+                    float current_x0 = x0[idx];
+                    float left_val = x[idx_left];
+                    float right_val = x[idx_right];
+                    float down_val = x[idx_down];
+                    float up_val = x[idx_up];
+                    float back_val = x[idx_back];
+                    float front_val = x[idx_front];
 
-          x[idx] = current_value / c;
+                    // Calculate the new value using local variables
+                    x[idx] = (current_x0 + a * (left_val + right_val + 
+                                                  down_val + up_val + 
+                                                  back_val + front_val)) / c;
+                }
+            }
         }
-      }
+        set_bnd(M, N, O, b, x);
     }
-    set_bnd(M, N, O, b, x);
-  }
 }
-
 
 
 // Diffusion step (uses implicit method)
@@ -139,38 +145,63 @@ void advect(int M, int N, int O, int b, float *d, float *d0, float *u, float *v,
 
 // Projection step to ensure incompressibility (make the velocity field
 // divergence-free)
-void project(int M, int N, int O, float *u, float *v, float *w, float *p,
-             float *div) {
+void project(int M, int N, int O, float *u, float *v, float *w, float *p, float *div) {
+  // Calculate the divisor once to avoid recalculating
+  float maxSize = MAX(M, MAX(N, O));
+
+  // Compute divergence and initialize pressure
   for (int i = 1; i <= M; i++) {
     for (int j = 1; j <= N; j++) {
       for (int k = 1; k <= O; k++) {
-        div[IX(i, j, k)] =
-            -0.5f *
-            (u[IX(i + 1, j, k)] - u[IX(i - 1, j, k)] + v[IX(i, j + 1, k)] -
-             v[IX(i, j - 1, k)] + w[IX(i, j, k + 1)] - w[IX(i, j, k - 1)]) /
-            MAX(M, MAX(N, O));
-        p[IX(i, j, k)] = 0;
+        // Precompute indices for current grid point
+        int idx = IX(i, j, k);
+        int idx_up = IX(i + 1, j, k);
+        int idx_down = IX(i - 1, j, k);
+        int idx_left = IX(i, j + 1, k);
+        int idx_right = IX(i, j - 1, k);
+        int idx_front = IX(i, j, k + 1);
+        int idx_back = IX(i, j, k - 1);
+
+        // Use local variables to enhance locality
+        float u_left   = u[idx_down];  // u[i - 1]
+        float u_right  = u[idx_up];     // u[i + 1]
+        float v_down   = v[idx_right];  // v[j + 1]
+        float v_up     = v[idx_left];   // v[j - 1]
+        float w_back   = w[idx_back];    // w[k - 1]
+        float w_front  = w[idx_front];   // w[k + 1]
+
+        // Calculate divergence
+        div[idx] = -0.5f * (u_right - u_left + v_up - v_down + w_front - w_back) / maxSize;
+        p[idx] = 0;  // Initialize pressure
       }
     }
   }
 
+  // Set boundary conditions for divergence and pressure
   set_bnd(M, N, O, 0, div);
   set_bnd(M, N, O, 0, p);
+  
+  // Solve for pressure using the linear solver
   lin_solve(M, N, O, 0, p, div, 1, 6);
 
+  // Update velocity components based on pressure gradients
   for (int i = 1; i <= M; i++) {
     for (int j = 1; j <= N; j++) {
       for (int k = 1; k <= O; k++) {
-        u[IX(i, j, k)] -= 0.5f * (p[IX(i + 1, j, k)] - p[IX(i - 1, j, k)]);
-        v[IX(i, j, k)] -= 0.5f * (p[IX(i, j + 1, k)] - p[IX(i, j - 1, k)]);
-        w[IX(i, j, k)] -= 0.5f * (p[IX(i, j, k + 1)] - p[IX(i, j, k - 1)]);
+        int idx = IX(i, j, k);
+        u[idx] -= 0.5f * (p[IX(i + 1, j, k)] - p[IX(i - 1, j, k)]);
+        v[idx] -= 0.5f * (p[IX(i, j + 1, k)] - p[IX(i, j - 1, k)]);
+        w[idx] -= 0.5f * (p[IX(i, j, k + 1)] - p[IX(i, j, k - 1)]);
       }
     }
   }
+
+  // Set boundary conditions for velocity components
   set_bnd(M, N, O, 1, u);
   set_bnd(M, N, O, 2, v);
   set_bnd(M, N, O, 3, w);
 }
+
 
 // Step function for density
 void dens_step(int M, int N, int O, float *x, float *x0, float *u, float *v,
