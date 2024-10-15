@@ -2,9 +2,10 @@ CPP = g++ -Wall -Wextra -lm -pg # -fexcess-precision=standard -ffloat-store
 
 # Optimization Flags
 CFLAG_DEFAULT = -O2 -ffast-math
-CFLAG_O2 = -O2 -ffast-math -ftree-vectorize -funroll-loops -march=native 
-CFLAG_O3 = -O3 -ffast-math -ftree-vectorize -funroll-loops -march=native
-CFLAG_OFAST = -Ofast -ffast-math -ftree-vectorize -funroll-loops -march=native
+CFLAG_VEC = -ftree-vectorize -march=native
+CFLAG_LOOP = -funroll-loops
+CFLAG_O3 = -O3 -ffast-math 
+CFLAG_OFAST = -Ofast -ffast-math 
 
 # Vectorization and Loop Optimization Flags
 CFLAG_MSSE = -msse4
@@ -19,15 +20,50 @@ all: $(OUTPUT)
 $(OUTPUT): $(SRCS)
 	$(CPP) $(CFLAG_DEFAULT) $(SRCS) -o $(OUTPUT)  # Default compilation without optimizations or profiling
 
-# Specific optimization targets
-o2: $(SRCS)
-	$(CPP) $(CFLAG_O2) $(SRCS) -o $(OUTPUT)
+# O2 flags
+o2_vec: $(SRCS)
+	$(CPP) $(CFLAG_O2) $(CFLAG_VEC) $(SRCS) -o $(OUTPUT)
+
+o2_loop: $(SRCS)
+	$(CPP) $(CFLAG_O2) $(CFLAG_LOOP) $(SRCS) -o $(OUTPUT)
+
+o2_ofast: $(SRCS)
+	$(CPP) $(CFLAG_O2) $(CFLAG_OFAST) $(SRCS) -o $(OUTPUT)
+
+o2_all: $(SRCS)
+	$(CPP) $(CFLAG_O2) $(CFLAG_VEC) $(CFLAG_LOOP) $(CFLAG_OFAST) $(SRCS) -o $(OUTPUT)
+
+# O3 flags
 
 o3: $(SRCS)
 	$(CPP) $(CFLAG_O3) $(SRCS) -o $(OUTPUT)
 
+o3_vec: $(SRCS)
+	$(CPP) $(CFLAG_O3) $(CFLAG_VEC) $(SRCS) -o $(OUTPUT)
+
+o3_loop: $(SRCS)
+	$(CPP) $(CFLAG_O3) $(CFLAG_LOOP) $(SRCS) -o $(OUTPUT)
+
+o3_ofast: $(SRCS)
+	$(CPP) $(CFLAG_O3) $(CFLAG_OFAST) $(SRCS) -o $(OUTPUT)
+
+o3_all: $(SRCS)
+	$(CPP) $(CFLAG_O3) $(CFLAG_VEC) $(CFLAG_LOOP) $(CFLAG_OFAST) $(SRCS) -o $(OUTPUT)
+
+# Ofast flags
+
 ofast: $(SRCS)
 	$(CPP) $(CFLAG_OFAST) $(SRCS) -o $(OUTPUT)
+
+ofast_vec: $(SRCS)
+	$(CPP) $(CFLAG_OFAST) $(CFLAG_VEC) $(SRCS) -o $(OUTPUT)
+
+ofast_loop: $(SRCS)
+	$(CPP) $(CFLAG_OFAST) $(CFLAG_LOOP) $(SRCS) -o $(OUTPUT)
+
+ofast_all: $(SRCS)
+	$(CPP) $(CFLAG_OFAST) $(CFLAG_VEC) $(CFLAG_LOOP) $(SRCS) -o $(OUTPUT)
+
 
 # Run the program
 run: $(OUTPUT)
