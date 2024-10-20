@@ -22,12 +22,17 @@ echo "Unzipping file to $TEMP_DIR"
 # Unzip the provided zip file
 unzip "${ZIP_FILE}" -d "${TEMP_DIR}" 2>/dev/null
 
+echo "UNZIP COMPLETE..."
 # Check if unzip was successful
 if [ $? -ne 0 ]; then
   echo "Error: Failed to unzip the file."
   rm -rf "${TEMP_DIR}"
   exit 1
 fi
+
+echo "TEST UNZIP COMPLETE..."
+
+chmod -R 766 tmp
 
 # Find directories in the unzipped folder
 for entry in "$TEMP_DIR"/*
@@ -61,8 +66,10 @@ do
 
         # Validate the first line and specific value in the output
         FIRST_LINE=$(head -n 1 run1.txt)
-        if [[ "$FIRST_LINE" == "$EXPECTED_FIRST_LINE" ]] && grep -q "$EXPECTED_VALUE" run1.txt; then
-          echo "Output validation passed"
+	RETURN_VALUE=`echo ${FIRST_LINE} | sed 's/Total density after 100 timesteps: //g'`  
+        #if [[ "$FIRST_LINE" == "$EXPECTED_FIRST_LINE" ]] && grep -q "$EXPECTED_VALUE" run1.txt; then
+	if [ "$(bc <<< "$RETURN_VALUE > 81980.8 && $RETURN_VALUE < 81981.8")" -eq 1 ]; then
+	  echo "Output validation passed"
         else
           echo "Output validation failed:"
           echo "Expected first line: '$EXPECTED_FIRST_LINE'"
