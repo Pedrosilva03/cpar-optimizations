@@ -13,12 +13,14 @@ CFLAG_LTO = -flto
 SRCS = main.cpp fluid_solver.cpp EventManager.cpp
 OUTPUT = fluid_sim
 
-# Main target: 5,7638 s +- 0,0802 s | 4,08% | 81981,2 | validate.sh : 9,370638579 s ; 6,711913000 seconds user; 81981,2
-
+# Main target: 4,4354 s +- 0,0578 s | 4,95% | 81981,5 | validate.sh : 5.036 s elapsed; 5.02347 seconds user; 81981,5
 all: $(OUTPUT)
 
 $(OUTPUT): $(SRCS)
-	$(CPP) $(CFLAG_DEFAULT) $(SRCS) -o $(OUTPUT)  # Default compilation without optimizations or profiling
+	$(CPP) $(CFLAG_O3) $(CFLAG_VEC) $(CFLAG_LOOP) $(CFLAG_OFAST) $(CFLAG_LTO) $(CFLAG_ALIGN) $(SRCS) -o $(OUTPUT)
+
+o2: $(SRCS)
+	$(CPP) $(CFLAG_DEFAULT) $(SRCS) -o $(OUTPUT)  # Default compilation without optimizations or profiling 5,7638 s +- 0,0802 s | 4,08% | 81981,2
 
 # O2 flags
 o2_vec: $(SRCS)
