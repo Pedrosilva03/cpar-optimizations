@@ -96,7 +96,7 @@ void set_bnd(int M, int N, int O, int b, float *x) {
 // Linear solve for implicit methods (diffusion)
 void lin_solve(int M, int N, int O, int b, float *x, float *x0, float a, float c) {
     // Blocking parameters (can be tuned)
-    int blockSize = 8; // Define the size of the blocks
+    int blockSize = 8;
 
     for (int l = 0; l < LINEARSOLVERTIMES; l++) {
         // Process blocks
