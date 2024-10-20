@@ -10,10 +10,6 @@ CFLAG_OFAST = -Ofast -ffast-math
 CFLAG_ALIGN = -falign-functions=16 -falign-loops=16
 CFLAG_LTO = -flto
 
-# Vectorization and Loop Optimization Flags
-CFLAG_MSSE = -msse4
-CFLAG_DEBUG = -g
-
 SRCS = main.cpp fluid_solver.cpp EventManager.cpp
 OUTPUT = fluid_sim
 
