@@ -1,10 +1,16 @@
-CPP = g++ -Wall 
+CPP = g++ -Wall -Wextra -lm -pg 
 SRCS = main.cpp fluid_solver.cpp EventManager.cpp
+OUTPUT = fluid_sim
+# Flags de otimização
+CFLAGS = -O3 -fopenmp -march=native -funroll-loops -ffast-math
 
-all:
-	$(CPP) $(SRCS) -o fluid_sim
+all: $(OUTPUT)
 
+$(OUTPUT): $(SRCS)
+	$(CPP) $(CFLAGS) $(SRCS) -o $(OUTPUT)
+
+# Limpeza
 clean:
 	@echo Cleaning up...
-	@rm fluid
+	@rm -f $(TARGET)
 	@echo Done.
