@@ -1,16 +1,39 @@
 CPP = g++ -Wall -Wextra -lm -pg 
-SRCS = main.cpp fluid_solver.cpp EventManager.cpp
+SRCS_PAR = main.cpp fluid_solver.cpp EventManager.cpp
+SRCS_SEQ = main.cpp fluid_solver_seq.cpp EventManager.cpp
 OUTPUT = fluid_sim
+
+
 # Flags de otimização
-CFLAGS = -O3 -fopenmp -march=native -funroll-loops -ffast-math
+CFLAGS = -Wall -Wextra -lm -lstdc++ -O3 -Ofast -ffast-math -ftree-vectorize -march=native -mavx -funroll-loops -flto -fopt-info
+CFLAG_PAR = -fopenmp -msse4.1
 
-all: $(OUTPUT)
+all: par seq
 
-$(OUTPUT): $(SRCS)
-	$(CPP) $(CFLAGS) $(SRCS) -o $(OUTPUT)
+par:
+	$(CPP) $(CFLAGS) $(CFLAG_PAR) $ $(SRCS_PAR) -o $(OUTPUT)
+
+seq:
+	$(CPP) $(CFLAGS) $ $(SRCS_SEQ) -o fluid_sim_seq
+
+# Run the program
+runpar: $(OUTPUT)
+	./$(OUTPUT)
+
+runseq: fluid_sim_seq
+	./fluid_sim_seq
+
+# Profile the program
+profile_par: run
+	gprof $(OUTPUT) gmon.out | gprof2dot | dot -Tpng -o callgraph.png
+	@echo Profile report generated: callgraph.png
+
+profile_seq: run
+	gprof fluid_sim_seq gmon.out | gprof2dot | dot -Tpng -o callgraph_seq.png
+	@echo Profile report generated: callgraph.png
 
 # Limpeza
 clean:
 	@echo Cleaning up...
-	@rm -f $(TARGET)
+	@rm -f $(OUTPUT) fluid_sim_seq gmon.out callgraph.png callgraph_seq.png 
 	@echo Done.

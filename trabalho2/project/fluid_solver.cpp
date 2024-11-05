@@ -91,6 +91,7 @@ void lin_solve(int M, int N, int O, int b, float *x, float *x0, float a, float c
     } while (max_c > tol && ++l < 20);
 }
 
+
 // Diffusion step (uses implicit method)
 void diffuse(int M, int N, int O, int b, float *x, float *x0, float diff,
              float dt) {
