@@ -12,6 +12,8 @@ module load gcc/11.2.0
 # Set OMP_NUM_THREADS to the number of CPUs per task allocated by Slurm
 export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK
 
+make par
+
 # run app
 srun --partition=cpar --exclusive \
      perf stat -r 3 -M instructions \
