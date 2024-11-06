@@ -18,19 +18,20 @@ seq:
 
 # Run the program
 runpar: $(OUTPUT)
+	export OMP_NUM_THREADS=`grep 'processor' /proc/cpuinfo | wc -l `;\
 	./$(OUTPUT)
 
 runseq: fluid_sim_seq
 	./fluid_sim_seq
 
 # Profile the program
-profile_par: run
+profile_par: runpar
 	gprof $(OUTPUT) gmon.out | gprof2dot | dot -Tpng -o callgraph.png
 	@echo Profile report generated: callgraph.png
 
-profile_seq: run
+profile_seq: runseq
 	gprof fluid_sim_seq gmon.out | gprof2dot | dot -Tpng -o callgraph_seq.png
-	@echo Profile report generated: callgraph.png
+	@echo Profile report generated: callgraph_seq.png
 
 # Limpeza
 clean:
