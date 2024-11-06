@@ -8,8 +8,7 @@ OUTPUT = fluid_sim
 CFLAGS = -Wall -Wextra -lm -lstdc++ -O3 -Ofast -ffast-math -ftree-vectorize -march=native -mavx -funroll-loops -flto -fopt-info
 CFLAG_PAR = -fopenmp -msse4.1
 
-OMP_NUM_THREADS=4
-export OMP_NUM_THREADS
+export OMP_NUM_THREADS=40;\
 
 all: par seq
 

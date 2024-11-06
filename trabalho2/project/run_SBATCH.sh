@@ -9,7 +9,8 @@
 # Load any necessary modules (if required)
 module load gcc/11.2.0
 
-make par
+make par > /dev/null 2>&1
 
 # run app
-./fluid_sim
+time ./fluid_sim
+
