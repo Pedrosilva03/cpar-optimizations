@@ -8,6 +8,9 @@ OUTPUT = fluid_sim
 CFLAGS = -Wall -Wextra -lm -lstdc++ -O3 -Ofast -ffast-math -ftree-vectorize -march=native -mavx -funroll-loops -flto -fopt-info
 CFLAG_PAR = -fopenmp -msse4.1
 
+OMP_NUM_THREADS=4
+export OMP_NUM_THREADS
+
 all: par seq
 
 par:
@@ -18,7 +21,6 @@ seq:
 
 # Run the program
 runpar: $(OUTPUT)
-	export OMP_NUM_THREADS=`grep 'processor' /proc/cpuinfo | wc -l `;\
 	./$(OUTPUT)
 
 runseq: fluid_sim_seq

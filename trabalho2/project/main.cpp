@@ -116,7 +116,7 @@ int main() {
 
   // Run simulation with events
   simulate(eventManager, timesteps);
-
+  
   // Print total density at the end of simulation
   float total_density = sum_density();
   std::cout << "Total density after " << timesteps

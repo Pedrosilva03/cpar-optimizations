@@ -1,21 +1,15 @@
 #!/bin/bash
-#SBATCH --job-name=fluid_sim_par
+#SBATCH --job-name=fluid_sim
 #SBATCH --partition=cpar
 #SBATCH --exclusive
-#SBATCH --cpus-per-task=$(grep 'processor' /proc/cpuinfo | wc -l) 
+#SBATCH --cpus-per-task=40
 #SBATCH --time=00:10:00           
 #SBATCH --output=fluid_sim_output.txt  
 
 # Load any necessary modules (if required)
 module load gcc/11.2.0
 
-# Set OMP_NUM_THREADS to the number of CPUs per task allocated by Slurm
-export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK
-
 make par
 
 # run app
-srun --partition=cpar --exclusive \
-     perf stat -r 3 -M instructions \
-     -e branch-misses,L1-dcache-loads,L1-dcache-load-misses,cycles,duration_time,mem-loads,mem-stores \
-     ./fluid_sim
+./fluid_sim
