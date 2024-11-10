@@ -12,8 +12,7 @@ module load gcc/11.2.0
 make par > /dev/null 2>&1
 
 # run app
-./fluid_sim
+srun --partition=cpar perf stat ./fluid_sim
 
-echo "Starting Job $SLURM_ARRAY_TASK_ID"
 
 
