@@ -8,8 +8,7 @@ OUTPUT = fluid_sim
 CFLAGS = -Wall -Wextra -lm -lstdc++ -O3 -Ofast -ffast-math -ftree-vectorize -march=native -mavx -funroll-loops -flto -fopt-info
 CFLAG_PAR = -fopenmp -msse4.1
 
-OMP_NUM_THREADS=4
-export OMP_NUM_THREADS
+export OMP_NUM_THREADS=40;\
 
 all: par seq
 
@@ -38,5 +37,5 @@ profile_seq: runseq
 # Limpeza
 clean:
 	@echo Cleaning up...
-	@rm -f $(OUTPUT) fluid_sim_seq gmon.out callgraph.png callgraph_seq.png perf_output.txt fluid_sim_output.txt
+	@rm -f $(OUTPUT) fluid_sim_seq gmon.out callgraph.png callgraph_seq.png fluid_sim_output.txt  
 	@echo Done.
