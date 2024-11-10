@@ -3,7 +3,7 @@
 #SBATCH --partition=cpar
 #SBATCH --exclusive
 #SBATCH --ntasks-per-node=1
-#SBATCH --cpus-per-task=40         
+#SBATCH --cpus-per-task=50         
 #SBATCH --output=fluid_sim_output.txt  
 
 # Load any necessary modules (if required)
