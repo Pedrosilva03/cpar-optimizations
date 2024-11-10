@@ -38,5 +38,5 @@ profile_seq: runseq
 # Limpeza
 clean:
 	@echo Cleaning up...
-	@rm -f $(OUTPUT) fluid_sim_seq gmon.out callgraph.png callgraph_seq.png 
+	@rm -f $(OUTPUT) fluid_sim_seq gmon.out callgraph.png callgraph_seq.png perf_output.txt fluid_sim_output.txt
 	@echo Done.

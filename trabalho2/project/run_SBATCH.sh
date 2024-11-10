@@ -2,8 +2,8 @@
 #SBATCH --job-name=fluid_sim
 #SBATCH --partition=cpar
 #SBATCH --exclusive
-#SBATCH --cpus-per-task=40
-#SBATCH --time=00:10:00           
+#SBATCH --ntasks-per-node=1
+#SBATCH --cpus-per-task=40         
 #SBATCH --output=fluid_sim_output.txt  
 
 # Load any necessary modules (if required)
@@ -13,3 +13,7 @@ make par
 
 # run app
 ./fluid_sim
+
+echo "Starting Job $SLURM_ARRAY_TASK_ID"
+
+
