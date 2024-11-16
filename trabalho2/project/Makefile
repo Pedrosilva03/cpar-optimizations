@@ -8,15 +8,16 @@ OUTPUT = fluid_sim
 CFLAGS = -Wall -Wextra -lm -lstdc++ -O3 -Ofast -ffast-math -ftree-vectorize -march=native -mavx -funroll-loops -flto -fopt-info
 CFLAG_PAR = -fopenmp -msse4.1
 
-export OMP_NUM_THREADS=40;\
+OMP_NUM_THREADS ?= 40
+export OMP_NUM_THREADS
 
 all: par seq
 
 par:
-	$(CPP) $(CFLAGS) $(CFLAG_PAR) $ $(SRCS_PAR) -o $(OUTPUT)
+	$(CPP) $(CFLAGS) $(CFLAG_PAR) $(SRCS_PAR) -o $(OUTPUT)
 
 seq:
-	$(CPP) $(CFLAGS) $ $(SRCS_SEQ) -o fluid_sim_seq
+	$(CPP) $(CFLAGS) $(SRCS_SEQ) -o fluid_sim_seq
 
 # Run the program
 runpar: $(OUTPUT)
