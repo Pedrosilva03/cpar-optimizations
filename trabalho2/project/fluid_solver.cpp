@@ -22,21 +22,21 @@ void add_source(int M, int N, int O, float *x, float *s, float dt) {
 
 void set_bnd(int M, int N, int O, int b, float *x) {
     int i, j;
-    #pragma omp parallel for schedule(static)
+    #pragma omp parallel for collapse(2) schedule(static)
     for (j = 1; j <= N; j++) {
         for (i = 1; i <= M; i++) {
             x[IX(i, j, 0)] = b == 3 ? -x[IX(i, j, 1)] : x[IX(i, j, 1)];
             x[IX(i, j, O + 1)] = b == 3 ? -x[IX(i, j, O)] : x[IX(i, j, O)];
         }
     }
-    #pragma omp parallel for schedule(static)
+    #pragma omp parallel for collapse(2) schedule(static)
     for (j = 1; j <= O; j++) {
         for (i = 1; i <= N; i++) {
             x[IX(0, i, j)] = b == 1 ? -x[IX(1, i, j)] : x[IX(1, i, j)];
             x[IX(M + 1, i, j)] = b == 1 ? -x[IX(M, i, j)] : x[IX(M, i, j)];
         }
     }
-    #pragma omp parallel for schedule(static)
+    #pragma omp parallel for collapse(2) schedule(static)
     for (j = 1; j <= O; j++) {
         for (i = 1; i <= M; i++) {
             x[IX(i, 0, j)] = b == 2 ? -x[IX(i, 1, j)] : x[IX(i, 1, j)];
@@ -56,7 +56,7 @@ void lin_solve(int M, int N, int O, int b, float *x, float *x0, float a, float c
 
     do {
         max_c = 0.0f;
-        #pragma omp parallel for collapse(2) schedule(static) reduction(max:max_c) private(change)
+        #pragma omp parallel for collapse(3) schedule(static) reduction(max:max_c) private(change)
         for (int k = 1; k <= O; k++) {
             for (int j = 1; j <= N; j++) {
                 for (int i = 1; i <= M; i++) {
@@ -72,8 +72,7 @@ void lin_solve(int M, int N, int O, int b, float *x, float *x0, float a, float c
                 }
             }
         }
-
-        #pragma omp parallel for collapse(2) schedule(static) reduction(max:max_c) private(change)
+        #pragma omp parallel for collapse(3) schedule(static) reduction(max:max_c) private(change)
         for (int k = 1; k <= O; k++) {
             for (int j = 1; j <= N; j++) {
                 for (int i = 1; i <= M; i++) {
@@ -102,7 +101,7 @@ void diffuse(int M, int N, int O, int b, float *x, float *x0, float diff, float 
 void advect(int M, int N, int O, int b, float *d, float *d0, float *u, float *v, float *w, float dt) {
     float dtX = dt * M, dtY = dt * N, dtZ = dt * O;
 
-    #pragma omp parallel for collapse(2) schedule(static)
+    #pragma omp parallel for collapse(3) schedule(static)
     for (int k = 1; k <= O; k++){
         for (int j = 1; j <= N; j++) {
             for (int i = 1; i <= M; i++) {
@@ -135,7 +134,7 @@ void project(int M, int N, int O, float *u, float *v, float *w, float *p, float 
     float inv_max_dim = 1.0f / max_dim;
 
     // Calculate divergence and initialize pressure field
-    #pragma omp parallel for collapse(2) schedule(static)
+    #pragma omp parallel for collapse(3) schedule(static)
     for (int k = 1; k <= O; k++) {
         for (int j = 1; j <= N; j++) {
             for (int i = 1; i <= M; i++) {
@@ -155,7 +154,7 @@ void project(int M, int N, int O, float *u, float *v, float *w, float *p, float 
     lin_solve(M, N, O, 0, p, div, 1, 6);
 
     // Update velocity fields based on pressure
-    #pragma omp parallel for collapse(2) schedule(static)
+    #pragma omp parallel for collapse(3) schedule(static)
     for (int k = 1; k <= O; k++) {
         for (int j = 1; j <= N; j++) {
             for (int i = 1; i <= M; i++) {
