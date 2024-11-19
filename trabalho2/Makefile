@@ -1,11 +1,11 @@
 CPP = g++ -Wall -Wextra -lm
-SRCS_PAR = main.cpp fluid_solver.cpp EventManager.cpp
-SRCS_SEQ = main.cpp fluid_solver_seq.cpp EventManager.cpp
+SRCS_PAR = project/main.cpp project/fluid_solver.cpp project/EventManager.cpp
+SRCS_SEQ = project/main.cpp project/fluid_solver_seq.cpp project/EventManager.cpp
 OUTPUT = fluid_sim
 
 
 # Flags de otimização
-CFLAGS = -march=native -funroll-loops -ffast-math -fopt-info -Ofast -ftree-vectorize -mavx
+CFLAGS = -march=native -funroll-loops -ffast-math -fopt-info -Ofast -ftree-vectorize -mavx -pg
 CFLAG_PAR = -fopenmp -msse4.1
 
 OMP_NUM_THREADS ?= 40
