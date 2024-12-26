@@ -3,6 +3,7 @@
 #include <cuda_runtime.h>
 #include <cmath>
 #include <algorithm>
+#include <iostream> // For debugging output
 
 #define IX(i, j, k) ((i) + (M + 2) * (j) + (M + 2) * (N + 2) * (k))
 #define SWAP(x0, x)                                                            \
@@ -12,6 +13,10 @@
     x = tmp;                                                                   \
   }
 #define MAX(a, b) (((a) > (b)) ? (a) : (b))
+
+int compute_size(int M, int N, int O) {
+    return (M + 2) * (N + 2) * (O + 2);
+}
 
 void add_source(int M, int N, int O, float *x, float *s, float dt) {
     int size = (M + 2) * (N + 2) * (O + 2);
@@ -50,9 +55,8 @@ void set_bnd(int M, int N, int O, int b, float *x) {
     x[IX(M + 1, N + 1, 0)] = 0.33f * (x[IX(M, N + 1, 0)] + x[IX(M + 1, N, 0)] + x[IX(M + 1, N + 1, 1)]); 
 }
 
-// Kernel principal para resolver a equação linear
 __global__ void lin_solve_kernel(int M, int N, int O, int b, float* x, const float* x0, float a, float inv_c, float* max_change) {
-    int i = blockIdx.x * blockDim.x + threadIdx.x + 1; // Evita as bordas
+    int i = blockIdx.x * blockDim.x + threadIdx.x + 1;
     int j = blockIdx.y * blockDim.y + threadIdx.y + 1;
     int k = blockIdx.z * blockDim.z + threadIdx.z + 1;
 
@@ -65,28 +69,45 @@ __global__ void lin_solve_kernel(int M, int N, int O, int b, float* x, const flo
                          x[IX(i, j, k - 1)] + x[IX(i, j, k + 1)])) * inv_c;
         float change = fabs(x[index] - old_x);
         if (change > *max_change) *max_change = change;
+
+        // Debug print to track execution
+        if (index < 10) printf("x[%d] = %f\n", index, x[index]);
     }
 }
 
-// Função para resolver a equação linear usando CUDA
 void lin_solve(int M, int N, int O, int b, float* x, const float* x0, float a, float c) {
     float tol = 1e-7f;
     float* d_x = nullptr;
     float* d_x0 = nullptr;
     float* d_max_change = nullptr;
     float max_change;
-    int size = (M + 2) * (N + 2) * (O + 2) * sizeof(float);
+    int size = compute_size(M, N, O) * sizeof(float);
 
-    // Aloca memória na GPU
-    cudaMalloc((void**)&d_x, size);
-    cudaMalloc((void**)&d_x0, size);
-    cudaMalloc((void**)&d_max_change, sizeof(float));
+    // Allocate GPU memory
+    if (cudaMalloc((void**)&d_x, size) != cudaSuccess) {
+        std::cerr << "Error allocating memory for d_x\n";
+    }
+    if (cudaMalloc((void**)&d_x0, size) != cudaSuccess) {
+        std::cerr << "Error allocating memory for d_x0\n";
+    }
+    if (cudaMalloc((void**)&d_max_change, sizeof(float)) != cudaSuccess) {
+        std::cerr << "Error allocating memory for d_max_change\n";
+    }
 
-    // Copia dados para a GPU
-    cudaMemcpy(d_x, x, size, cudaMemcpyHostToDevice);
-    cudaMemcpy(d_x0, x0, size, cudaMemcpyHostToDevice);
+    // Copy data to GPU
+    if (cudaMemcpy(d_x, x, size, cudaMemcpyHostToDevice) != cudaSuccess) {
+        std::cerr << "Error copying x to d_x\n";
+    }
+    if (cudaMemcpy(d_x0, x0, size, cudaMemcpyHostToDevice) != cudaSuccess) {
+        std::cerr << "Error copying x0 to d_x0\n";
+    }
 
-    // Configura dimensões de blocos e grades
+    // Debug: Check initial data on GPU
+    float* debug_x = new float[size / sizeof(float)];
+    cudaMemcpy(debug_x, d_x, size, cudaMemcpyDeviceToHost);
+    delete[] debug_x;
+
+    // Kernel configuration
     dim3 threadsPerBlock(8, 8, 8);
     dim3 numBlocks((M + threadsPerBlock.x - 1) / threadsPerBlock.x,
                    (N + threadsPerBlock.y - 1) / threadsPerBlock.y,
@@ -95,26 +116,39 @@ void lin_solve(int M, int N, int O, int b, float* x, const float* x0, float a, f
     float inv_c = 1.0f / c;
     int iterations = 0;
 
-    // Itera até atingir a tolerância
+    // Iterate until tolerance is met
     do {
         max_change = 0.0f;
-        cudaMemcpy(d_max_change, &max_change, sizeof(float), cudaMemcpyHostToDevice);
+        if (cudaMemcpy(d_max_change, &max_change, sizeof(float), cudaMemcpyHostToDevice) != cudaSuccess) {
+            std::cerr << "Error resetting d_max_change\n";
+        }
 
         lin_solve_kernel<<<numBlocks, threadsPerBlock>>>(M, N, O, b, d_x, d_x0, a, inv_c, d_max_change);
         cudaDeviceSynchronize();
 
-        cudaMemcpy(&max_change, d_max_change, sizeof(float), cudaMemcpyDeviceToHost);
+        if (cudaMemcpy(&max_change, d_max_change, sizeof(float), cudaMemcpyDeviceToHost) != cudaSuccess) {
+            std::cerr << "Error copying d_max_change back to host\n";
+        }
         iterations++;
+        std::cout << "Iteration " << iterations << " max_change: " << max_change << "\n";
     } while (max_change > tol && iterations < 20);
 
-    // Copia resultados de volta para a CPU
-    cudaMemcpy(x, d_x, size, cudaMemcpyDeviceToHost);
+    // Copy results back to host
+    if (cudaMemcpy(x, d_x, size, cudaMemcpyDeviceToHost) != cudaSuccess) {
+        std::cerr << "Error copying d_x to x\n";
+    }
 
-    // Libera memória na GPU
+    // Debug: Check final data on GPU
+    float* debug_final_x = new float[size / sizeof(float)];
+    cudaMemcpy(debug_final_x, d_x, size, cudaMemcpyDeviceToHost);
+    delete[] debug_final_x;
+
+    // Free GPU memory
     cudaFree(d_x);
     cudaFree(d_x0);
     cudaFree(d_max_change);
 }
+
 
 void diffuse(int M, int N, int O, int b, float *x, float *x0, float diff, float dt) {
     int max = MAX(M, MAX(N, O));
