@@ -130,7 +130,6 @@ void lin_solve(int M, int N, int O, int b, float* x, const float* x0, float a, f
             std::cerr << "Error copying d_max_change back to host\n";
         }
         iterations++;
-        std::cout << "Iteration " << iterations << " max_change: " << max_change << "\n";
     } while (max_change > tol && iterations < 20);
 
     // Copy results back to host
