@@ -19,9 +19,20 @@ static float visc = 0.0001f; // Viscosity constant
 static float *u, *v, *w, *u_prev, *v_prev, *w_prev;
 static float *dens, *dens_prev;
 
+// Function to check CUDA errors
+void check_cuda_error(const char *msg) {
+    cudaError_t err = cudaGetLastError();
+    if (err != cudaSuccess) {
+        std::cerr << "CUDA error after " << msg << ": " << cudaGetErrorString(err) << std::endl;
+        exit(-1);
+    }
+}
+
 // Function to allocate simulation data
 int allocate_data() {
   int size = (M + 2) * (N + 2) * (O + 2);
+  
+  // Allocate memory for fluid simulation arrays
   u = new float[size];
   v = new float[size];
   w = new float[size];
@@ -31,8 +42,9 @@ int allocate_data() {
   dens = new float[size];
   dens_prev = new float[size];
 
+  // Check if any allocation failed
   if (!u || !v || !w || !u_prev || !v_prev || !w_prev || !dens || !dens_prev) {
-    std::cerr << "Cannot allocate memory" << std::endl;
+    std::cerr << "Cannot allocate memory on the host" << std::endl;
     return 0;
   }
   return 1;
