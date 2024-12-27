@@ -14,6 +14,37 @@
   }
 #define MAX(a, b) (((a) > (b)) ? (a) : (b))
 
+// Macro to check CUDA errors and display an error message if any
+#define CHECK_CUDA(call) \
+    do { \
+        cudaError_t err = call; \
+        if (err != cudaSuccess) { \
+            std::cerr << "CUDA error in " << __FILE__ << ":" << __LINE__ << " : " \
+                      << cudaGetErrorString(err) << std::endl; \
+            exit(EXIT_FAILURE); \
+        } \
+    } while (0)
+
+// Encapsulation of GPU Memory Management 
+struct GPUData {
+    float* d_x;
+    float* d_x0;
+    float* d_max_change;
+
+    GPUData(int size) {
+        CHECK_CUDA(cudaMalloc(&d_x, size));
+        CHECK_CUDA(cudaMalloc(&d_x0, size));
+        CHECK_CUDA(cudaMalloc(&d_max_change, sizeof(float)));
+    }
+
+    ~GPUData() {
+        cudaFree(d_x);
+        cudaFree(d_x0);
+        cudaFree(d_max_change);
+    }
+};
+
+
 int compute_size(int M, int N, int O) {
     return (M + 2) * (N + 2) * (O + 2);
 }
@@ -137,32 +168,15 @@ __global__ void lin_solve_black_kernel(int M, int N, int O, int b, float* x, con
 
 void lin_solve(int M, int N, int O, int b, float* x, const float* x0, float a, float c) {
     float tol = 1e-7f;
-    float* d_x = nullptr;
-    float* d_x0 = nullptr;
-    float* d_max_change = nullptr;
     float max_change;
     int size = compute_size(M, N, O) * sizeof(float);
 
-    // Allocate GPU memory
-    if (cudaMalloc((void**)&d_x, size) != cudaSuccess) {
-        std::cerr << "Error allocating memory for d_x\n";
-    }
-    if (cudaMalloc((void**)&d_x0, size) != cudaSuccess) {
-        std::cerr << "Error allocating memory for d_x0\n";
-    }
-    if (cudaMalloc((void**)&d_max_change, sizeof(float)) != cudaSuccess) {
-        std::cerr << "Error allocating memory for d_max_change\n";
-    }
+    GPUData gpuData(size);
 
     // Copy data to GPU
-    if (cudaMemcpy(d_x, x, size, cudaMemcpyHostToDevice) != cudaSuccess) {
-        std::cerr << "Error copying x to d_x\n";
-    }
-    if (cudaMemcpy(d_x0, x0, size, cudaMemcpyHostToDevice) != cudaSuccess) {
-        std::cerr << "Error copying x0 to d_x0\n";
-    }
+    CHECK_CUDA(cudaMemcpy(gpuData.d_x, x, size, cudaMemcpyHostToDevice));
+    CHECK_CUDA(cudaMemcpy(gpuData.d_x0, x0, size, cudaMemcpyHostToDevice));
 
-    // Configuração dos kernels
     dim3 threadsPerBlock(8, 8, 8);
     dim3 numBlocks((M + threadsPerBlock.x - 1) / threadsPerBlock.x,
                    (N + threadsPerBlock.y - 1) / threadsPerBlock.y,
@@ -171,35 +185,21 @@ void lin_solve(int M, int N, int O, int b, float* x, const float* x0, float a, f
     float inv_c = 1.0f / c;
     int iterations = 0;
 
-    // Iterar até atingir a tolerância
     do {
         max_change = 0.0f;
-        cudaMemcpy(d_max_change, &max_change, sizeof(float), cudaMemcpyHostToDevice);
+        CHECK_CUDA(cudaMemcpy(gpuData.d_max_change, &max_change, sizeof(float), cudaMemcpyHostToDevice));
 
-        // Fase Red
-        lin_solve_red_kernel<<<numBlocks, threadsPerBlock>>>(M, N, O, b, d_x, d_x0, a, inv_c, d_max_change);
-        cudaDeviceSynchronize();
+        lin_solve_red_kernel<<<numBlocks, threadsPerBlock>>>(M, N, O, b, gpuData.d_x, gpuData.d_x0, a, inv_c, gpuData.d_max_change);
+        lin_solve_black_kernel<<<numBlocks, threadsPerBlock>>>(M, N, O, b, gpuData.d_x, gpuData.d_x0, a, inv_c, gpuData.d_max_change);
 
-        // Fase Black
-        lin_solve_black_kernel<<<numBlocks, threadsPerBlock>>>(M, N, O, b, d_x, d_x0, a, inv_c, d_max_change);
-        cudaDeviceSynchronize();
+        CHECK_CUDA(cudaMemcpy(&max_change, gpuData.d_max_change, sizeof(float), cudaMemcpyDeviceToHost));
 
-        // Copiar `max_change` de volta para o host
-        cudaMemcpy(&max_change, d_max_change, sizeof(float), cudaMemcpyDeviceToHost);
+        set_bnd_kernel<<<numBlocks, threadsPerBlock>>>(M, N, O, b, gpuData.d_x);
 
-        // Aplicar condições de contorno
-        set_bnd_kernel<<<numBlocks, threadsPerBlock>>>(M, N, O, b, d_x);
-        cudaDeviceSynchronize();
-
+        CHECK_CUDA(cudaDeviceSynchronize());
     } while (max_change > tol && ++iterations < 20);
 
-    // Copiar resultados de volta para o host
-    cudaMemcpy(x, d_x, size, cudaMemcpyDeviceToHost);
-
-    // Libertar memória na GPU
-    cudaFree(d_x);
-    cudaFree(d_x0);
-    cudaFree(d_max_change);
+    CHECK_CUDA(cudaMemcpy(x, gpuData.d_x, size, cudaMemcpyDeviceToHost));
 }
 
 
