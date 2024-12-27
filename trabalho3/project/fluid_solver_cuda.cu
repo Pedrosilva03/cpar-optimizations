@@ -162,15 +162,6 @@ void lin_solve(int M, int N, int O, int b, float* x, const float* x0, float a, f
         std::cerr << "Error copying x0 to d_x0\n";
     }
 
-    max_change = 0.0f;
-    if (cudaMemcpy(d_max_change, &max_change, sizeof(float), cudaMemcpyHostToDevice) != cudaSuccess) {
-        std::cerr << "Error initializing max_change on GPU\n";
-        cudaFree(d_x);
-        cudaFree(d_x0);
-        cudaFree(d_max_change);
-        return;
-    }
-
     // Configuração dos kernels
     dim3 threadsPerBlock(8, 8, 8);
     dim3 numBlocks((M + threadsPerBlock.x - 1) / threadsPerBlock.x,
