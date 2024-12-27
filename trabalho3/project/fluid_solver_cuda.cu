@@ -55,23 +55,83 @@ void set_bnd(int M, int N, int O, int b, float *x) {
     x[IX(M + 1, N + 1, 0)] = 0.33f * (x[IX(M, N + 1, 0)] + x[IX(M + 1, N, 0)] + x[IX(M + 1, N + 1, 1)]); 
 }
 
-__global__ void lin_solve_kernel(int M, int N, int O, int b, float* x, const float* x0, float a, float inv_c, float* max_change) {
+__global__ void set_bnd_kernel(int M, int N, int O, int b, float* x) {
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
+    int j = blockIdx.y * blockDim.y + threadIdx.y;
+    int k = blockIdx.z * blockDim.z + threadIdx.z;
+
+    // Bordas em k = 0 e k = O+1
+    if (i >= 1 && i <= M && j >= 1 && j <= N) {
+        if (k == 0) x[IX(i, j, 0)] = (b == 3) ? -x[IX(i, j, 1)] : x[IX(i, j, 1)];
+        if (k == O + 1) x[IX(i, j, O + 1)] = (b == 3) ? -x[IX(i, j, O)] : x[IX(i, j, O)];
+    }
+
+    // Bordas em i = 0 e i = M+1
+    if (j >= 1 && j <= N && k >= 1 && k <= O) {
+        if (i == 0) x[IX(0, j, k)] = (b == 1) ? -x[IX(1, j, k)] : x[IX(1, j, k)];
+        if (i == M + 1) x[IX(M + 1, j, k)] = (b == 1) ? -x[IX(M, j, k)] : x[IX(M, j, k)];
+    }
+
+    // Bordas em j = 0 e j = N+1
+    if (i >= 1 && i <= M && k >= 1 && k <= O) {
+        if (j == 0) x[IX(i, 0, k)] = (b == 2) ? -x[IX(i, 1, k)] : x[IX(i, 1, k)];
+        if (j == N + 1) x[IX(i, N + 1, k)] = (b == 2) ? -x[IX(i, N, k)] : x[IX(i, N, k)];
+    }
+
+    // Cálculo explícito dos cantos
+    if (i == 0 && j == 0 && k == 0) 
+        x[IX(0, 0, 0)] = 0.33f * (x[IX(1, 0, 0)] + x[IX(0, 1, 0)] + x[IX(0, 0, 1)]);
+    if (i == M + 1 && j == 0 && k == 0) 
+        x[IX(M + 1, 0, 0)] = 0.33f * (x[IX(M, 0, 0)] + x[IX(M + 1, 1, 0)] + x[IX(M + 1, 0, 1)]);
+    if (i == 0 && j == N + 1 && k == 0) 
+        x[IX(0, N + 1, 0)] = 0.33f * (x[IX(1, N + 1, 0)] + x[IX(0, N, 0)] + x[IX(0, N + 1, 1)]);
+    if (i == M + 1 && j == N + 1 && k == 0) 
+        x[IX(M + 1, N + 1, 0)] = 0.33f * (x[IX(M, N + 1, 0)] + x[IX(M + 1, N, 0)] + x[IX(M + 1, N + 1, 1)]);
+}
+
+__device__ __forceinline__ float atomicMaxFloat (float * addr, float value) {
+    float old;
+    old = (value >= 0) ? __int_as_float(atomicMax((int *)addr, __float_as_int(value))) :
+         __uint_as_float(atomicMin((unsigned int *)addr, __float_as_uint(value)));
+
+    return old;
+}
+
+__global__ void lin_solve_red_kernel(int M, int N, int O, int b, float* x, const float* x0, float a, float inv_c, float* max_change) {
     int i = blockIdx.x * blockDim.x + threadIdx.x + 1;
     int j = blockIdx.y * blockDim.y + threadIdx.y + 1;
     int k = blockIdx.z * blockDim.z + threadIdx.z + 1;
 
     if (i <= M && j <= N && k <= O) {
-        int index = IX(i, j, k);
-        float old_x = x[index];
-        x[index] = (x0[index] +
-                    a * (x[IX(i - 1, j, k)] + x[IX(i + 1, j, k)] +
-                         x[IX(i, j - 1, k)] + x[IX(i, j + 1, k)] +
-                         x[IX(i, j, k - 1)] + x[IX(i, j, k + 1)])) * inv_c;
-        float change = fabs(x[index] - old_x);
-        if (change > *max_change) *max_change = change;
+        if ((i + j + k) % 2 == 1) {  // Red
+            int index = IX(i, j, k);
+            float old_x = x[index];
+            x[index] = (x0[index] +
+                        a * (x[IX(i - 1, j, k)] + x[IX(i + 1, j, k)] +
+                             x[IX(i, j - 1, k)] + x[IX(i, j + 1, k)] +
+                             x[IX(i, j, k - 1)] + x[IX(i, j, k + 1)])) * inv_c;
+            float change = fabsf(x[index] - old_x);
+            atomicMaxFloat(max_change, change);
+        }
+    }
+}
 
-        // Debug print to track execution
-        if (index < 10) printf("x[%d] = %f\n", index, x[index]);
+__global__ void lin_solve_black_kernel(int M, int N, int O, int b, float* x, const float* x0, float a, float inv_c, float* max_change) {
+    int i = blockIdx.x * blockDim.x + threadIdx.x + 1;
+    int j = blockIdx.y * blockDim.y + threadIdx.y + 1;
+    int k = blockIdx.z * blockDim.z + threadIdx.z + 1;
+
+    if (i <= M && j <= N && k <= O) {
+        if ((i + j + k) % 2 == 0) {  // Black
+            int index = IX(i, j, k);
+            float old_x = x[index];
+            x[index] = (x0[index] +
+                        a * (x[IX(i - 1, j, k)] + x[IX(i + 1, j, k)] +
+                             x[IX(i, j - 1, k)] + x[IX(i, j + 1, k)] +
+                             x[IX(i, j, k - 1)] + x[IX(i, j, k + 1)])) * inv_c;
+            float change = fabsf(x[index] - old_x);
+            atomicMaxFloat(max_change, change);
+        }
     }
 }
 
@@ -102,12 +162,7 @@ void lin_solve(int M, int N, int O, int b, float* x, const float* x0, float a, f
         std::cerr << "Error copying x0 to d_x0\n";
     }
 
-    // Debug: Check initial data on GPU
-    float* debug_x = new float[size / sizeof(float)];
-    cudaMemcpy(debug_x, d_x, size, cudaMemcpyDeviceToHost);
-    delete[] debug_x;
-
-    // Kernel configuration
+    // Configuração dos kernels
     dim3 threadsPerBlock(8, 8, 8);
     dim3 numBlocks((M + threadsPerBlock.x - 1) / threadsPerBlock.x,
                    (N + threadsPerBlock.y - 1) / threadsPerBlock.y,
@@ -116,33 +171,32 @@ void lin_solve(int M, int N, int O, int b, float* x, const float* x0, float a, f
     float inv_c = 1.0f / c;
     int iterations = 0;
 
-    // Iterate until tolerance is met
+    // Iterar até atingir a tolerância
     do {
         max_change = 0.0f;
-        if (cudaMemcpy(d_max_change, &max_change, sizeof(float), cudaMemcpyHostToDevice) != cudaSuccess) {
-            std::cerr << "Error resetting d_max_change\n";
-        }
+        cudaMemcpy(d_max_change, &max_change, sizeof(float), cudaMemcpyHostToDevice);
 
-        lin_solve_kernel<<<numBlocks, threadsPerBlock>>>(M, N, O, b, d_x, d_x0, a, inv_c, d_max_change);
+        // Fase Red
+        lin_solve_red_kernel<<<numBlocks, threadsPerBlock>>>(M, N, O, b, d_x, d_x0, a, inv_c, d_max_change);
         cudaDeviceSynchronize();
 
-        if (cudaMemcpy(&max_change, d_max_change, sizeof(float), cudaMemcpyDeviceToHost) != cudaSuccess) {
-            std::cerr << "Error copying d_max_change back to host\n";
-        }
-        iterations++;
-    } while (max_change > tol && iterations < 20);
+        // Fase Black
+        lin_solve_black_kernel<<<numBlocks, threadsPerBlock>>>(M, N, O, b, d_x, d_x0, a, inv_c, d_max_change);
+        cudaDeviceSynchronize();
 
-    // Copy results back to host
-    if (cudaMemcpy(x, d_x, size, cudaMemcpyDeviceToHost) != cudaSuccess) {
-        std::cerr << "Error copying d_x to x\n";
-    }
+        // Copiar `max_change` de volta para o host
+        cudaMemcpy(&max_change, d_max_change, sizeof(float), cudaMemcpyDeviceToHost);
 
-    // Debug: Check final data on GPU
-    float* debug_final_x = new float[size / sizeof(float)];
-    cudaMemcpy(debug_final_x, d_x, size, cudaMemcpyDeviceToHost);
-    delete[] debug_final_x;
+        // Aplicar condições de contorno
+        set_bnd_kernel<<<numBlocks, threadsPerBlock>>>(M, N, O, b, d_x);
+        cudaDeviceSynchronize();
 
-    // Free GPU memory
+    } while (max_change > tol && ++iterations < 20);
+
+    // Copiar resultados de volta para o host
+    cudaMemcpy(x, d_x, size, cudaMemcpyDeviceToHost);
+
+    // Libertar memória na GPU
     cudaFree(d_x);
     cudaFree(d_x0);
     cudaFree(d_max_change);
