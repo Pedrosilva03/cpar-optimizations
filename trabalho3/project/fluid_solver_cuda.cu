@@ -18,6 +18,8 @@ int compute_size(int M, int N, int O) {
     return (M + 2) * (N + 2) * (O + 2);
 }
 
+static int global_size;
+
 // Variáveis dos kernels
 
 // set_bnd
@@ -33,7 +35,8 @@ float *d_u = nullptr, *d_v = nullptr, *d_w = nullptr, *d_p = nullptr, *d_div = n
 
 // Mallocs constantes dos kernels
 void initCudaMalloc(int M, int N, int O){
-    int size = compute_size(M, N, O) * sizeof(float);
+    global_size = compute_size(M, N, O);
+    int size = global_size * sizeof(float);
     // set_bnd
     cudaMalloc((void**)&new_x, size);
     // lin_solve
@@ -95,9 +98,9 @@ void add_source_original(int M, int N, int O, float *x, float *s, float dt){
     float* d_x;
     float* d_s;
 
-    int size = compute_size(M, N, O) * sizeof(float);
+    int size = global_size * sizeof(float);
     int threadsPerBlock = 256;
-    int numBlocks = (compute_size(M, N, O) + threadsPerBlock - 1) / threadsPerBlock;
+    int numBlocks = (global_size + threadsPerBlock - 1) / threadsPerBlock;
 
     cudaMalloc((void**)&d_x, size);
     cudaMalloc((void**)&d_s, size);
@@ -155,10 +158,11 @@ __global__ void set_bnd_kernel(int M, int N, int O, int b, float* x) {
         x[IX(M + 1, N + 1, 0)] = 0.33f * (x[IX(M, N + 1, 0)] + x[IX(M + 1, N, 0)] + x[IX(M + 1, N + 1, 1)]);
 }
 
+// Acho que não é utilizada neste momento. Todas as funções chamam diretamente o kernel
 void set_bnd(int M, int N, int O, int b, float *x) {
     // Configuração dos kernels
-    int size = compute_size(M, N, O) * sizeof(float);
-    dim3 threadsPerBlock(8, 8, 8);
+    int size = global_size * sizeof(float);
+    dim3 threadsPerBlock(64, 8, 2);
     dim3 numBlocks((M + threadsPerBlock.x - 1) / threadsPerBlock.x,
                    (N + threadsPerBlock.y - 1) / threadsPerBlock.y,
                    (O + threadsPerBlock.z - 1) / threadsPerBlock.z);
@@ -250,7 +254,7 @@ __global__ void lin_solve_black_kernel(int M, int N, int O, int b, float* x, con
 void lin_solve(int M, int N, int O, int b, float* x, const float* x0, float a, float c) {
     float tol = 1e-7f;
     float max_change;
-    int size = compute_size(M, N, O) * sizeof(float);
+    int size = global_size * sizeof(float);
 
     // Copy data to GPU
     if (cudaMemcpy(d_x, x, size, cudaMemcpyHostToDevice) != cudaSuccess) {
@@ -263,7 +267,7 @@ void lin_solve(int M, int N, int O, int b, float* x, const float* x0, float a, f
     cudaMemcpy(d_max_change, &max_change, sizeof(float), cudaMemcpyHostToDevice);
 
     // Configuração dos kernels
-    dim3 threadsPerBlock(8, 8, 8);
+    dim3 threadsPerBlock(64, 8, 2);
     dim3 numBlocks((M + threadsPerBlock.x - 1) / threadsPerBlock.x,
                    (N + threadsPerBlock.y - 1) / threadsPerBlock.y,
                    (O + threadsPerBlock.z - 1) / threadsPerBlock.z);
@@ -332,7 +336,7 @@ __global__ void advect_kernel(int M, int N, int O, int b, float* d, const float*
 }
 
 void advect(int M, int N, int O, int b, float* h_d, float* h_d0, float* h_u, float* h_v, float* h_w, float dt) {
-    int size = compute_size(M, N, O) * sizeof(float);
+    int size = global_size * sizeof(float);
 
     // Copiar dados do host para a GPU
     cudaMemcpy(d_d, h_d, size, cudaMemcpyHostToDevice);
@@ -342,7 +346,7 @@ void advect(int M, int N, int O, int b, float* h_d, float* h_d0, float* h_u, flo
     cudaMemcpy(d_ww, h_w, size, cudaMemcpyHostToDevice);
 
     // Configuração de dimensões dos blocos e grades
-    dim3 threadsPerBlock(8, 8, 8);
+    dim3 threadsPerBlock(64, 8, 2);
     dim3 numBlocks((M + threadsPerBlock.x - 1) / threadsPerBlock.x,
                    (N + threadsPerBlock.y - 1) / threadsPerBlock.y,
                    (O + threadsPerBlock.z - 1) / threadsPerBlock.z);
@@ -392,7 +396,7 @@ __global__ void project_update_velocity_kernel(int M, int N, int O, float* u, fl
 // Projection step to ensure incompressibility (make the velocity field
 // divergence-free)
 void project(int M, int N, int O, float* h_u, float* h_v, float* h_w, float* h_p, float* h_div) {
-    int size = compute_size(M, N, O) * sizeof(float);
+    int size = global_size * sizeof(float);
 
     // Copiar dados do host para a GPU
     cudaMemcpy(d_u, h_u, size, cudaMemcpyHostToDevice);
@@ -402,7 +406,7 @@ void project(int M, int N, int O, float* h_u, float* h_v, float* h_w, float* h_p
     cudaMemcpy(d_div, h_div, size, cudaMemcpyHostToDevice);
 
     // Configuração de dimensões dos blocos e grades
-    dim3 threadsPerBlock(8, 8, 8);
+    dim3 threadsPerBlock(64, 8, 2);
     dim3 numBlocks((M + threadsPerBlock.x - 1) / threadsPerBlock.x,
                    (N + threadsPerBlock.y - 1) / threadsPerBlock.y,
                    (O + threadsPerBlock.z - 1) / threadsPerBlock.z);
