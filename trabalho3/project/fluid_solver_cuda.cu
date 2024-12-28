@@ -18,6 +18,38 @@ int compute_size(int M, int N, int O) {
     return (M + 2) * (N + 2) * (O + 2);
 }
 
+__global__ void add_source_kernel(int M, int N, int O, float *x, float *s, float dt) {
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    int size = (M + 2) * (N + 2) * (O + 2);
+
+    if (idx < size) {
+        x[idx] += dt * s[idx];
+    }
+}
+
+void add_source_original(int M, int N, int O, float *x, float *s, float dt){
+    float* d_x;
+    float* d_s;
+
+    int size = compute_size(M, N, O) * sizeof(float);
+    int threadsPerBlock = 256;
+    int numBlocks = (compute_size(M, N, O) + threadsPerBlock - 1) / threadsPerBlock;
+
+    cudaMalloc((void**)&d_x, size);
+    cudaMalloc((void**)&d_s, size);
+
+    cudaMemcpy(d_x, x, size, cudaMemcpyHostToDevice);
+    cudaMemcpy(d_s, s, size, cudaMemcpyHostToDevice);
+
+    add_source_kernel<<<numBlocks, threadsPerBlock>>>(M, N, O, d_x, d_s, dt);
+
+    cudaMemcpy(x, d_x, size, cudaMemcpyDeviceToHost);
+
+    cudaFree(d_x);
+    cudaFree(d_s);
+}
+
+// Para já mais rapida que o kernel então é a utilizada
 void add_source(int M, int N, int O, float *x, float *s, float dt) {
     int size = (M + 2) * (N + 2) * (O + 2);
     for (int i = 0; i < size; i++) {
@@ -128,7 +160,8 @@ __global__ void lin_solve_red_kernel(int M, int N, int O, int b, float* x, const
                              x[IX(i, j - 1, k)] + x[IX(i, j + 1, k)] +
                              x[IX(i, j, k - 1)] + x[IX(i, j, k + 1)])) * inv_c;
             float change = fabsf(x[index] - old_x);
-            atomicMaxFloat(max_change, change);
+            //atomicMaxFloat(max_change, change);
+            if (change > *max_change) *max_change = change;
         }
     }
 }
@@ -147,7 +180,8 @@ __global__ void lin_solve_black_kernel(int M, int N, int O, int b, float* x, con
                              x[IX(i, j - 1, k)] + x[IX(i, j + 1, k)] +
                              x[IX(i, j, k - 1)] + x[IX(i, j, k + 1)])) * inv_c;
             float change = fabsf(x[index] - old_x);
-            atomicMaxFloat(max_change, change);
+            //atomicMaxFloat(max_change, change);
+            if (change > *max_change) *max_change = change;
         }
     }
 }
@@ -179,6 +213,8 @@ void lin_solve(int M, int N, int O, int b, float* x, const float* x0, float a, f
         std::cerr << "Error copying x0 to d_x0\n";
     }
 
+    cudaMemcpy(d_max_change, &max_change, sizeof(float), cudaMemcpyHostToDevice);
+
     // Configuração dos kernels
     dim3 threadsPerBlock(8, 8, 8);
     dim3 numBlocks((M + threadsPerBlock.x - 1) / threadsPerBlock.x,
@@ -191,7 +227,7 @@ void lin_solve(int M, int N, int O, int b, float* x, const float* x0, float a, f
     // Iterar até atingir a tolerância
     do {
         max_change = 0.0f;
-        cudaMemcpy(d_max_change, &max_change, sizeof(float), cudaMemcpyHostToDevice);
+        cudaMemset(d_max_change, 0, sizeof(float));
 
         // Fase Red
         lin_solve_red_kernel<<<numBlocks, threadsPerBlock>>>(M, N, O, b, d_x, d_x0, a, inv_c, d_max_change);

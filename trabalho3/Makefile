@@ -8,7 +8,7 @@ NVCC = nvcc
 # Flags de otimização
 CFLAGS = -march=native -funroll-loops -ffast-math -fopt-info -Ofast -ftree-vectorize -mavx -pg
 CFLAG_PAR = -fopenmp -msse4.1
-CUDAFLAGS = -O2 -g -std=c++11 -arch=sm_35 -Wno-deprecated-gpu-targets
+CUDAFLAGS = -O3 -g -use_fast_math -std=c++11 -arch=sm_35 -Wno-deprecated-gpu-targets
 
 OMP_NUM_THREADS ?= 40
 export OMP_NUM_THREADS
