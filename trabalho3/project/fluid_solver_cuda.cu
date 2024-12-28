@@ -18,6 +18,70 @@ int compute_size(int M, int N, int O) {
     return (M + 2) * (N + 2) * (O + 2);
 }
 
+// Variáveis dos kernels
+
+// set_bnd
+float* new_x;
+// lin_solve
+float* d_x = nullptr;
+float* d_x0 = nullptr;
+float* d_max_change = nullptr;
+// advect
+float *d_d = nullptr, *d_d0 = nullptr, *d_uu = nullptr, *d_vv = nullptr, *d_ww = nullptr;
+// project
+float *d_u = nullptr, *d_v = nullptr, *d_w = nullptr, *d_p = nullptr, *d_div = nullptr;
+
+// Mallocs constantes dos kernels
+void initCudaMalloc(int M, int N, int O){
+    int size = compute_size(M, N, O) * sizeof(float);
+    // set_bnd
+    cudaMalloc((void**)&new_x, size);
+    // lin_solve
+    if (cudaMalloc((void**)&d_x, size) != cudaSuccess) {
+        std::cerr << "Error allocating memory for d_x\n";
+    }
+    if (cudaMalloc((void**)&d_x0, size) != cudaSuccess) {
+        std::cerr << "Error allocating memory for d_x0\n";
+    }
+    if (cudaMalloc((void**)&d_max_change, sizeof(float)) != cudaSuccess) {
+        std::cerr << "Error allocating memory for d_max_change\n";
+    }
+    // advect
+    cudaMalloc((void**)&d_d, size);
+    cudaMalloc((void**)&d_d0, size);
+    cudaMalloc((void**)&d_uu, size);
+    cudaMalloc((void**)&d_vv, size);
+    cudaMalloc((void**)&d_ww, size);
+    // project
+    cudaMalloc((void**)&d_u, size);
+    cudaMalloc((void**)&d_v, size);
+    cudaMalloc((void**)&d_w, size);
+    cudaMalloc((void**)&d_p, size);
+    cudaMalloc((void**)&d_div, size);
+}
+
+// Liberta os mallocs constantes
+void freeCudaMalloc(){
+    // set_bnd
+    cudaFree(new_x);
+    // lin_solve
+    cudaFree(d_x);
+    cudaFree(d_x0);
+    cudaFree(d_max_change);
+    // advect
+    cudaFree(d_d);
+    cudaFree(d_d0);
+    cudaFree(d_uu);
+    cudaFree(d_vv);
+    cudaFree(d_ww);
+    // project
+    cudaFree(d_u);
+    cudaFree(d_v);
+    cudaFree(d_w);
+    cudaFree(d_p);
+    cudaFree(d_div);
+}
+
 __global__ void add_source_kernel(int M, int N, int O, float *x, float *s, float dt) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
     int size = (M + 2) * (N + 2) * (O + 2);
@@ -99,8 +163,6 @@ void set_bnd(int M, int N, int O, int b, float *x) {
                    (N + threadsPerBlock.y - 1) / threadsPerBlock.y,
                    (O + threadsPerBlock.z - 1) / threadsPerBlock.z);
     
-    float* new_x;
-    cudaMalloc((void**)&new_x, size);
     cudaMemcpy(new_x, x, size, cudaMemcpyHostToDevice);
 
     set_bnd_kernel<<<numBlocks, threadsPerBlock>>>(M, N, O, b, new_x);
@@ -108,7 +170,6 @@ void set_bnd(int M, int N, int O, int b, float *x) {
 
     cudaMemcpy(x, new_x, size, cudaMemcpyDeviceToHost);
 
-    cudaFree(new_x);
     /*int i, j;
 
     for (j = 1; j <= N; j++) {
@@ -188,22 +249,8 @@ __global__ void lin_solve_black_kernel(int M, int N, int O, int b, float* x, con
 
 void lin_solve(int M, int N, int O, int b, float* x, const float* x0, float a, float c) {
     float tol = 1e-7f;
-    float* d_x = nullptr;
-    float* d_x0 = nullptr;
-    float* d_max_change = nullptr;
     float max_change;
     int size = compute_size(M, N, O) * sizeof(float);
-
-    // Allocate GPU memory
-    if (cudaMalloc((void**)&d_x, size) != cudaSuccess) {
-        std::cerr << "Error allocating memory for d_x\n";
-    }
-    if (cudaMalloc((void**)&d_x0, size) != cudaSuccess) {
-        std::cerr << "Error allocating memory for d_x0\n";
-    }
-    if (cudaMalloc((void**)&d_max_change, sizeof(float)) != cudaSuccess) {
-        std::cerr << "Error allocating memory for d_max_change\n";
-    }
 
     // Copy data to GPU
     if (cudaMemcpy(d_x, x, size, cudaMemcpyHostToDevice) != cudaSuccess) {
@@ -248,11 +295,6 @@ void lin_solve(int M, int N, int O, int b, float* x, const float* x0, float a, f
 
     // Copiar resultados de volta para o host
     cudaMemcpy(x, d_x, size, cudaMemcpyDeviceToHost);
-
-    // Libertar memória na GPU
-    cudaFree(d_x);
-    cudaFree(d_x0);
-    cudaFree(d_max_change);
 }
 
 
@@ -290,22 +332,14 @@ __global__ void advect_kernel(int M, int N, int O, int b, float* d, const float*
 }
 
 void advect(int M, int N, int O, int b, float* h_d, float* h_d0, float* h_u, float* h_v, float* h_w, float dt) {
-    float *d_d = nullptr, *d_d0 = nullptr, *d_u = nullptr, *d_v = nullptr, *d_w = nullptr;
     int size = compute_size(M, N, O) * sizeof(float);
-
-    // Alocar memória na GPU
-    cudaMalloc((void**)&d_d, size);
-    cudaMalloc((void**)&d_d0, size);
-    cudaMalloc((void**)&d_u, size);
-    cudaMalloc((void**)&d_v, size);
-    cudaMalloc((void**)&d_w, size);
 
     // Copiar dados do host para a GPU
     cudaMemcpy(d_d, h_d, size, cudaMemcpyHostToDevice);
     cudaMemcpy(d_d0, h_d0, size, cudaMemcpyHostToDevice);
-    cudaMemcpy(d_u, h_u, size, cudaMemcpyHostToDevice);
-    cudaMemcpy(d_v, h_v, size, cudaMemcpyHostToDevice);
-    cudaMemcpy(d_w, h_w, size, cudaMemcpyHostToDevice);
+    cudaMemcpy(d_uu, h_u, size, cudaMemcpyHostToDevice);
+    cudaMemcpy(d_vv, h_v, size, cudaMemcpyHostToDevice);
+    cudaMemcpy(d_ww, h_w, size, cudaMemcpyHostToDevice);
 
     // Configuração de dimensões dos blocos e grades
     dim3 threadsPerBlock(8, 8, 8);
@@ -314,7 +348,7 @@ void advect(int M, int N, int O, int b, float* h_d, float* h_d0, float* h_u, flo
                    (O + threadsPerBlock.z - 1) / threadsPerBlock.z);
 
     // Lançar o kernel
-    advect_kernel<<<numBlocks, threadsPerBlock>>>(M, N, O, b, d_d, d_d0, d_u, d_v, d_w, dt);
+    advect_kernel<<<numBlocks, threadsPerBlock>>>(M, N, O, b, d_d, d_d0, d_uu, d_vv, d_ww, dt);
     cudaDeviceSynchronize();
 
     // Aplicar condições de contorno (não é preciso chamar o setup porque o array já está na GPU)
@@ -323,13 +357,6 @@ void advect(int M, int N, int O, int b, float* h_d, float* h_d0, float* h_u, flo
 
     // Copiar resultados de volta para o host
     cudaMemcpy(h_d, d_d, size, cudaMemcpyDeviceToHost);
-
-    // Liberar memória na GPU
-    cudaFree(d_d);
-    cudaFree(d_d0);
-    cudaFree(d_u);
-    cudaFree(d_v);
-    cudaFree(d_w);
 }
 
 __global__ void project_divergence_kernel(int M, int N, int O, float* u, float* v, float* w, float* p, float* div, float inv_max_dim) {
@@ -365,15 +392,7 @@ __global__ void project_update_velocity_kernel(int M, int N, int O, float* u, fl
 // Projection step to ensure incompressibility (make the velocity field
 // divergence-free)
 void project(int M, int N, int O, float* h_u, float* h_v, float* h_w, float* h_p, float* h_div) {
-    float *d_u = nullptr, *d_v = nullptr, *d_w = nullptr, *d_p = nullptr, *d_div = nullptr;
     int size = compute_size(M, N, O) * sizeof(float);
-
-    // Alocação de memória na GPU
-    cudaMalloc((void**)&d_u, size);
-    cudaMalloc((void**)&d_v, size);
-    cudaMalloc((void**)&d_w, size);
-    cudaMalloc((void**)&d_p, size);
-    cudaMalloc((void**)&d_div, size);
 
     // Copiar dados do host para a GPU
     cudaMemcpy(d_u, h_u, size, cudaMemcpyHostToDevice);
@@ -428,13 +447,6 @@ void project(int M, int N, int O, float* h_u, float* h_v, float* h_w, float* h_p
     cudaMemcpy(h_w, d_w, size, cudaMemcpyDeviceToHost);
     cudaMemcpy(h_p, d_p, size, cudaMemcpyDeviceToHost);
     cudaMemcpy(h_div, d_div, size, cudaMemcpyDeviceToHost);
-
-    // Liberar memória na GPU
-    cudaFree(d_u);
-    cudaFree(d_v);
-    cudaFree(d_w);
-    cudaFree(d_p);
-    cudaFree(d_div);
 }
 
 // Step function for density

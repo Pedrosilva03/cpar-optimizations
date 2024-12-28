@@ -1,6 +1,8 @@
 #ifndef FLUID_SOLVER_H
 #define FLUID_SOLVER_H
 
+void initCudaMalloc(int M, int N, int O);
+void freeCudaMalloc();
 void dens_step(int M, int N, int O, float *x, float *x0, float *u, float *v,
                float *w, float diff, float dt);
 void vel_step(int M, int N, int O, float *u, float *v, float *w, float *u0,
