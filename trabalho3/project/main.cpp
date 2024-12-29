@@ -87,6 +87,8 @@ float sum_density() {
 
 // Simulation loop
 void simulate(EventManager &eventManager, int timesteps) {
+  initCudaMalloc(M, N, O);
+  cudaHostToDevice(u, v, w, u_prev, v_prev, w_prev, dens, dens_prev);
   for (int t = 0; t < timesteps; t++) {
     // Get the events for the current timestep
     std::vector<Event> events = eventManager.get_events_at_timestamp(t);
@@ -94,14 +96,16 @@ void simulate(EventManager &eventManager, int timesteps) {
     // Apply events to the simulation
     apply_events(events);
 
-    initCudaMalloc(M, N, O);
+    cudaHostToDevice(u, v, w, nullptr, nullptr, nullptr, dens, nullptr);
 
     // Perform the simulation steps
     vel_step(M, N, O, u, v, w, u_prev, v_prev, w_prev, visc, dt);
     dens_step(M, N, O, dens, dens_prev, u, v, w, diff, dt);
 
-    freeCudaMalloc();
+    cudaDeviceToHost(u, v, w, nullptr, nullptr, nullptr, dens, nullptr);
   }
+  cudaDeviceToHost(u, v, w, u_prev, v_prev, w_prev, dens, dens_prev);
+  freeCudaMalloc();
 }
 
 int main() {
