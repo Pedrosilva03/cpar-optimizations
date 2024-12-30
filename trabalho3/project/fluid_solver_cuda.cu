@@ -94,12 +94,26 @@ void freeCudaMalloc(){
     cudaFree(d_dens_prev);
 }
 
+__global__ void add_source_kernel(int M, int N, int O, float *x, float *s, float dt) {
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    int size = (M + 2) * (N + 2) * (O + 2);
+
+    if (idx < size) {
+        x[idx] += dt * s[idx];
+    }
+}
+
 // Para já mais rapida que o kernel então é a utilizada
 void add_source(int M, int N, int O, float *x, float *s, float dt) {
-    int size = (M + 2) * (N + 2) * (O + 2);
+    int threadsPerBlock = 256;
+    int numBlocks = (global_size + threadsPerBlock - 1) / threadsPerBlock;
+
+    add_source_kernel<<<numBlocks, threadsPerBlock>>>(M, N, O, x, s, dt);
+    cudaDeviceSynchronize();
+    /*int size = (M + 2) * (N + 2) * (O + 2);
     for (int i = 0; i < size; i++) {
         x[i] += dt * s[i];
-    }
+    }*/
 }
 
 __global__ void set_bnd_kernel(int M, int N, int O, int b, float* x) {
@@ -234,8 +248,7 @@ void lin_solve(int M, int N, int O, int b, float* x, const float* x0, float a, f
     float max_change;
     float* d_max_change;
 
-    cudaMalloc((void**)&d_max_change, sizeof(float));
-    cudaMemcpy(d_max_change, &max_change, sizeof(float), cudaMemcpyHostToDevice);
+    cudaMallocManaged((void**)&d_max_change, sizeof(float));
 
     // Configuração dos kernels
     dim3 threadsPerBlock(64, 8, 2);
@@ -248,8 +261,7 @@ void lin_solve(int M, int N, int O, int b, float* x, const float* x0, float a, f
 
     // Iterar até atingir a tolerância
     do {
-        max_change = 0.0f;
-        cudaMemset(d_max_change, 0, sizeof(float));
+        *d_max_change = 0.0f;
 
         // Fase Red
         lin_solve_red_kernel<<<numBlocks, threadsPerBlock>>>(M, N, O, b, x, x0, a, inv_c, d_max_change);
@@ -259,14 +271,11 @@ void lin_solve(int M, int N, int O, int b, float* x, const float* x0, float a, f
         lin_solve_black_kernel<<<numBlocks, threadsPerBlock>>>(M, N, O, b, x, x0, a, inv_c, d_max_change);
         cudaDeviceSynchronize();
 
-        // Copiar `max_change` de volta para o host
-        cudaMemcpy(&max_change, d_max_change, sizeof(float), cudaMemcpyDeviceToHost);
-
         // Aplicar condições de contorno (não é preciso chamar o setup porque o array já está na GPU)
         set_bnd_kernel<<<numBlocks, threadsPerBlock>>>(M, N, O, b, x);
         cudaDeviceSynchronize();
 
-    } while (max_change > tol && ++iterations < 20);
+    } while (*d_max_change > tol && ++iterations < 20);
 }
 
 

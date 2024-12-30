@@ -1,6 +1,10 @@
 #ifndef FLUID_SOLVER_H
 #define FLUID_SOLVER_H
 
+// Fluid simulation arrays
+extern float *d_u, *d_v, *d_w, *d_u_prev, *d_v_prev, *d_w_prev;
+extern float *d_dens, *d_dens_prev;
+
 void initCudaMalloc(int M, int N, int O);
 void cudaHostToDevice(float* u, float* v, float* w, float* u_prev, float* v_prev, float* w_prev, float* dens, float* dens_prev);
 void cudaDeviceToHost(float* u, float* v, float* w, float* u_prev, float* v_prev, float* w_prev, float* dens, float* dens_prev);
