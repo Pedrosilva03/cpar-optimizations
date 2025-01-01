@@ -43,12 +43,12 @@ profile_seq: runseq
 	gprof fluid_sim_seq gmon.out | gprof2dot | dot -Tpng -o callgraph_seq.png
 	@echo Profile report generated: callgraph_seq.png
 
-profile_cuda: runcuda
-	nvprof ./fluid_sim_cuda
+profile_cuda:
+	nvprof --print-gpu-trace ./fluid_sim_cuda
 	@echo Profile report generated for nvprof
 
 # Limpeza
 clean:
 	@echo Cleaning up...
-	@rm -f $(OUTPUT) fluid_sim_seq fluid_sim_cuda gmon.out callgraph.png callgraph_seq.png fluid_sim_output.txt  
+	@rm -f $(OUTPUT) fluid_sim_seq fluid_sim_cuda gmon.out callgraph.png callgraph_seq.png fluid_sim_output.txt profile.txt
 	@echo Done.

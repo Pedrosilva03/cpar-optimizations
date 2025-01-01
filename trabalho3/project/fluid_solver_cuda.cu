@@ -24,6 +24,8 @@ static int global_size;
 float *d_u, *d_v, *d_w, *d_u_prev, *d_v_prev, *d_w_prev;
 float *d_dens, *d_dens_prev;
 
+float* d_max_change;
+
 // Mallocs constantes dos kernels
 void initCudaMalloc(int M, int N, int O){
     global_size = compute_size(M, N, O);
@@ -38,21 +40,22 @@ void initCudaMalloc(int M, int N, int O){
     if (cudaMallocManaged((void**)&d_w, size) != cudaSuccess) {
         printf("Erro ao alocar memória para d_w: %s\n", cudaGetErrorString(cudaGetLastError()));
     }
-    if (cudaMallocManaged((void**)&d_u_prev, size) != cudaSuccess) {
+    if (cudaMalloc((void**)&d_u_prev, size) != cudaSuccess) {
         printf("Erro ao alocar memória para d_u_prev: %s\n", cudaGetErrorString(cudaGetLastError()));
     }
-    if (cudaMallocManaged((void**)&d_v_prev, size) != cudaSuccess) {
+    if (cudaMalloc((void**)&d_v_prev, size) != cudaSuccess) {
         printf("Erro ao alocar memória para d_v_prev: %s\n", cudaGetErrorString(cudaGetLastError()));
     }
-    if (cudaMallocManaged((void**)&d_w_prev, size) != cudaSuccess) {
+    if (cudaMalloc((void**)&d_w_prev, size) != cudaSuccess) {
         printf("Erro ao alocar memória para d_w_prev: %s\n", cudaGetErrorString(cudaGetLastError()));
     }
     if (cudaMallocManaged((void**)&d_dens, size) != cudaSuccess) {
         printf("Erro ao alocar memória para d_dens: %s\n", cudaGetErrorString(cudaGetLastError()));
     }
-    if (cudaMallocManaged((void**)&d_dens_prev, size) != cudaSuccess) {
+    if (cudaMalloc((void**)&d_dens_prev, size) != cudaSuccess) {
         printf("Erro ao alocar memória para d_dens_prev: %s\n", cudaGetErrorString(cudaGetLastError()));
     }
+    cudaMallocManaged((void**)&d_max_change, sizeof(float));
 }
 
 void cudaHostToDevice(float* u, float* v, float* w, float* u_prev, float* v_prev, float* w_prev, float* dens, float* dens_prev){
@@ -92,11 +95,12 @@ void freeCudaMalloc(){
 
     cudaFree(d_dens);
     cudaFree(d_dens_prev);
+
+    cudaFree(d_max_change);
 }
 
-__global__ void add_source_kernel(int M, int N, int O, float *x, float *s, float dt) {
+__global__ void add_source_kernel(int M, int N, int O, float *x, float *s, float dt, int size) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    int size = (M + 2) * (N + 2) * (O + 2);
 
     if (idx < size) {
         x[idx] += dt * s[idx];
@@ -105,15 +109,11 @@ __global__ void add_source_kernel(int M, int N, int O, float *x, float *s, float
 
 // Para já mais rapida que o kernel então é a utilizada
 void add_source(int M, int N, int O, float *x, float *s, float dt) {
-    int threadsPerBlock = 256;
+    int threadsPerBlock = 128;
     int numBlocks = (global_size + threadsPerBlock - 1) / threadsPerBlock;
 
-    add_source_kernel<<<numBlocks, threadsPerBlock>>>(M, N, O, x, s, dt);
+    add_source_kernel<<<numBlocks, threadsPerBlock>>>(M, N, O, x, s, dt, global_size);
     cudaDeviceSynchronize();
-    /*int size = (M + 2) * (N + 2) * (O + 2);
-    for (int i = 0; i < size; i++) {
-        x[i] += dt * s[i];
-    }*/
 }
 
 __global__ void set_bnd_kernel(int M, int N, int O, int b, float* x) {
@@ -121,78 +121,34 @@ __global__ void set_bnd_kernel(int M, int N, int O, int b, float* x) {
     int j = blockIdx.y * blockDim.y + threadIdx.y;
     int k = blockIdx.z * blockDim.z + threadIdx.z;
 
-    // Bordas em k = 0 e k = O+1
-    if (i >= 1 && i <= M && j >= 1 && j <= N) {
-        if (k == 0) x[IX(i, j, 0)] = (b == 3) ? -x[IX(i, j, 1)] : x[IX(i, j, 1)];
-        if (k == O + 1) x[IX(i, j, O + 1)] = (b == 3) ? -x[IX(i, j, O)] : x[IX(i, j, O)];
-    }
+    int index = IX(i, j, k);
 
-    // Bordas em i = 0 e i = M+1
-    if (j >= 1 && j <= N && k >= 1 && k <= O) {
-        if (i == 0) x[IX(0, j, k)] = (b == 1) ? -x[IX(1, j, k)] : x[IX(1, j, k)];
-        if (i == M + 1) x[IX(M + 1, j, k)] = (b == 1) ? -x[IX(M, j, k)] : x[IX(M, j, k)];
+    if (i >= 0 && i <= M+1 && j >= 0 && j <= N+1 && k >= 0 && k <= O+1) {
+        // Apenas bordas para evitar condições excessivas
+        if (k == 0 || k == O+1) {
+            int offset = (k == 0) ? 1 : O;
+            x[index] = (b == 3) ? -x[IX(i, j, offset)] : x[IX(i, j, offset)];
+        }
+        if (i == 0 || i == M+1) {
+            int offset = (i == 0) ? 1 : M;
+            x[index] = (b == 1) ? -x[IX(offset, j, k)] : x[IX(offset, j, k)];
+        }
+        if (j == 0 || j == N+1) {
+            int offset = (j == 0) ? 1 : N;
+            x[index] = (b == 2) ? -x[IX(i, offset, k)] : x[IX(i, offset, k)];
+        }
     }
-
-    // Bordas em j = 0 e j = N+1
-    if (i >= 1 && i <= M && k >= 1 && k <= O) {
-        if (j == 0) x[IX(i, 0, k)] = (b == 2) ? -x[IX(i, 1, k)] : x[IX(i, 1, k)];
-        if (j == N + 1) x[IX(i, N + 1, k)] = (b == 2) ? -x[IX(i, N, k)] : x[IX(i, N, k)];
-    }
-
-    // Cálculo explícito dos cantos
-    if (i == 0 && j == 0 && k == 0) 
-        x[IX(0, 0, 0)] = 0.33f * (x[IX(1, 0, 0)] + x[IX(0, 1, 0)] + x[IX(0, 0, 1)]);
-    if (i == M + 1 && j == 0 && k == 0) 
-        x[IX(M + 1, 0, 0)] = 0.33f * (x[IX(M, 0, 0)] + x[IX(M + 1, 1, 0)] + x[IX(M + 1, 0, 1)]);
-    if (i == 0 && j == N + 1 && k == 0) 
-        x[IX(0, N + 1, 0)] = 0.33f * (x[IX(1, N + 1, 0)] + x[IX(0, N, 0)] + x[IX(0, N + 1, 1)]);
-    if (i == M + 1 && j == N + 1 && k == 0) 
-        x[IX(M + 1, N + 1, 0)] = 0.33f * (x[IX(M, N + 1, 0)] + x[IX(M + 1, N, 0)] + x[IX(M + 1, N + 1, 1)]);
 }
 
 // Acho que não é utilizada neste momento. Todas as funções chamam diretamente o kernel
 void set_bnd(int M, int N, int O, int b, float *x) {
     // Configuração dos kernels
-    int size = global_size * sizeof(float);
-    dim3 threadsPerBlock(64, 8, 2);
+    dim3 threadsPerBlock(16, 8, 8);
     dim3 numBlocks((M + threadsPerBlock.x - 1) / threadsPerBlock.x,
                    (N + threadsPerBlock.y - 1) / threadsPerBlock.y,
                    (O + threadsPerBlock.z - 1) / threadsPerBlock.z);
     
-    //cudaMemcpy(new_x, x, size, cudaMemcpyHostToDevice);
-
     set_bnd_kernel<<<numBlocks, threadsPerBlock>>>(M, N, O, b, x);
-    cudaDeviceSynchronize();
-
-    //cudaMemcpy(x, new_x, size, cudaMemcpyDeviceToHost);
-
-    /*int i, j;
-
-    for (j = 1; j <= N; j++) {
-        for (i = 1; i <= M; i++) {
-            x[IX(i, j, 0)] = (b == 3) ? -x[IX(i, j, 1)] : x[IX(i, j, 1)];
-            x[IX(i, j, O + 1)] = (b == 3) ? -x[IX(i, j, O)] : x[IX(i, j, O)];
-        }
-    }
-
-    for (j = 1; j <= O; j++) {
-        for (i = 1; i <= N; i++) {
-            x[IX(0, i, j)] = (b == 1) ? -x[IX(1, i, j)] : x[IX(1, i, j)];
-            x[IX(M + 1, i, j)] = (b == 1) ? -x[IX(M, i, j)] : x[IX(M, i, j)];
-        }
-    }
-
-    for (j = 1; j <= O; j++) {
-        for (i = 1; i <= M; i++) {
-            x[IX(i, 0, j)] = (b == 2) ? -x[IX(i, 1, j)] : x[IX(i, 1, j)];
-            x[IX(i, N + 1, j)] = (b == 2) ? -x[IX(i, N, j)] : x[IX(i, N, j)];
-        }
-    }
-
-    x[IX(0, 0, 0)] = 0.33f * (x[IX(1, 0, 0)] + x[IX(0, 1, 0)] + x[IX(0, 0, 1)]); 
-    x[IX(M + 1, 0, 0)] = 0.33f * (x[IX(M, 0, 0)] + x[IX(M + 1, 1, 0)] + x[IX(M + 1, 0, 1)]); 
-    x[IX(0, N + 1, 0)] = 0.33f * (x[IX(1, N + 1, 0)] + x[IX(0, N, 0)] + x[IX(0, N + 1, 1)]); 
-    x[IX(M + 1, N + 1, 0)] = 0.33f * (x[IX(M, N + 1, 0)] + x[IX(M + 1, N, 0)] + x[IX(M + 1, N + 1, 1)]); */
 }
 
 __device__ __forceinline__ float atomicMaxFloat (float * addr, float value) {
@@ -212,11 +168,11 @@ __global__ void lin_solve_red_kernel(int M, int N, int O, int b, float* x, const
         if ((i + j + k) % 2 == 1) {  // Red
             int index = IX(i, j, k);
             float old_x = x[index];
-            x[index] = (x0[index] +
+            float new_value = x[index] = (x0[index] +
                         a * (x[IX(i - 1, j, k)] + x[IX(i + 1, j, k)] +
                              x[IX(i, j - 1, k)] + x[IX(i, j + 1, k)] +
                              x[IX(i, j, k - 1)] + x[IX(i, j, k + 1)])) * inv_c;
-            float change = fabsf(x[index] - old_x);
+            float change = fabsf(new_value - old_x);
             //atomicMaxFloat(max_change, change);
             if (change > *max_change) *max_change = change;
         }
@@ -232,11 +188,11 @@ __global__ void lin_solve_black_kernel(int M, int N, int O, int b, float* x, con
         if ((i + j + k) % 2 == 0) {  // Black
             int index = IX(i, j, k);
             float old_x = x[index];
-            x[index] = (x0[index] +
+            float new_value = x[index] = (x0[index] +
                         a * (x[IX(i - 1, j, k)] + x[IX(i + 1, j, k)] +
                              x[IX(i, j - 1, k)] + x[IX(i, j + 1, k)] +
                              x[IX(i, j, k - 1)] + x[IX(i, j, k + 1)])) * inv_c;
-            float change = fabsf(x[index] - old_x);
+            float change = fabsf(new_value - old_x);
             //atomicMaxFloat(max_change, change);
             if (change > *max_change) *max_change = change;
         }
@@ -245,10 +201,6 @@ __global__ void lin_solve_black_kernel(int M, int N, int O, int b, float* x, con
 
 void lin_solve(int M, int N, int O, int b, float* x, const float* x0, float a, float c) {
     float tol = 1e-7f;
-    float max_change;
-    float* d_max_change;
-
-    cudaMallocManaged((void**)&d_max_change, sizeof(float));
 
     // Configuração dos kernels
     dim3 threadsPerBlock(64, 8, 2);
@@ -272,7 +224,8 @@ void lin_solve(int M, int N, int O, int b, float* x, const float* x0, float a, f
         cudaDeviceSynchronize();
 
         // Aplicar condições de contorno (não é preciso chamar o setup porque o array já está na GPU)
-        set_bnd_kernel<<<numBlocks, threadsPerBlock>>>(M, N, O, b, x);
+        //set_bnd_kernel<<<numBlocks, threadsPerBlock>>>(M, N, O, b, x);
+        set_bnd(M, N, O, b, x);
         cudaDeviceSynchronize();
 
     } while (*d_max_change > tol && ++iterations < 20);
@@ -285,7 +238,7 @@ void diffuse(int M, int N, int O, int b, float *x, float *x0, float diff, float 
     lin_solve(M, N, O, b, x, x0, a, 1 + 6 * a);
 }
 
-__global__ void advect_kernel(int M, int N, int O, int b, float* d, const float* d0, const float* u, const float* v, const float* w, float dt) {
+__global__ void advect_kernel(int M, int N, int O, int b, float* d, const float* d0, const float* u, const float* v, const float* w, float dt, float dtX, float dtY, float dtZ) {
     int i = blockIdx.x * blockDim.x + threadIdx.x + 1; // +1 para evitar bordas
     int j = blockIdx.y * blockDim.y + threadIdx.y + 1;
     int k = blockIdx.z * blockDim.z + threadIdx.z + 1;
@@ -293,7 +246,6 @@ __global__ void advect_kernel(int M, int N, int O, int b, float* d, const float*
     if (i > M || j > N || k > O) return;
 
     int index = IX(i, j, k);
-    float dtX = dt * M, dtY = dt * N, dtZ = dt * O;
 
     float u_val = u[index], v_val = v[index], w_val = w[index];
     float x = i - dtX * u_val, y = j - dtY * v_val, z = k - dtZ * w_val;
@@ -314,17 +266,18 @@ __global__ void advect_kernel(int M, int N, int O, int b, float* d, const float*
 
 void advect(int M, int N, int O, int b, float* h_d, float* h_d0, float* h_u, float* h_v, float* h_w, float dt) {
     // Configuração de dimensões dos blocos e grades
-    dim3 threadsPerBlock(64, 8, 2);
+    dim3 threadsPerBlock(32, 16, 2);
     dim3 numBlocks((M + threadsPerBlock.x - 1) / threadsPerBlock.x,
                    (N + threadsPerBlock.y - 1) / threadsPerBlock.y,
                    (O + threadsPerBlock.z - 1) / threadsPerBlock.z);
 
     // Lançar o kernel
-    advect_kernel<<<numBlocks, threadsPerBlock>>>(M, N, O, b, h_d, h_d0, h_u, h_v, h_w, dt);
+    advect_kernel<<<numBlocks, threadsPerBlock>>>(M, N, O, b, h_d, h_d0, h_u, h_v, h_w, dt, dt*M, dt*N, dt*O);
     cudaDeviceSynchronize();
 
     // Aplicar condições de contorno (não é preciso chamar o setup porque o array já está na GPU)
-    set_bnd_kernel<<<numBlocks, threadsPerBlock>>>(M, N, O, b, h_d);
+    //set_bnd_kernel<<<numBlocks, threadsPerBlock>>>(M, N, O, b, h_d);
+    set_bnd(M, N, N, b, h_d);
     cudaDeviceSynchronize();
 }
 
@@ -361,11 +314,17 @@ __global__ void project_update_velocity_kernel(int M, int N, int O, float* u, fl
 // Projection step to ensure incompressibility (make the velocity field
 // divergence-free)
 void project(int M, int N, int O, float* h_u, float* h_v, float* h_w, float* h_p, float* h_div) {
-    // Configuração de dimensões dos blocos e grades
+    // Configuração de dimensões dos blocos e grades para a divergência
     dim3 threadsPerBlock(64, 8, 2);
     dim3 numBlocks((M + threadsPerBlock.x - 1) / threadsPerBlock.x,
                    (N + threadsPerBlock.y - 1) / threadsPerBlock.y,
                    (O + threadsPerBlock.z - 1) / threadsPerBlock.z);
+
+    // Configuração de dimensões dos blocos e grades para a velocidade
+    dim3 threadsPerBlock2(64, 16, 1);
+    dim3 numBlocks2((M + threadsPerBlock2.x - 1) / threadsPerBlock2.x,
+                   (N + threadsPerBlock2.y - 1) / threadsPerBlock2.y,
+                   (O + threadsPerBlock2.z - 1) / threadsPerBlock2.z);
 
     float inv_max_dim = 1.0f / max(M, max(N, O));
 
@@ -374,31 +333,33 @@ void project(int M, int N, int O, float* h_u, float* h_v, float* h_w, float* h_p
     cudaDeviceSynchronize();
 
     // Aplicar condições de contorno (não é preciso chamar o setup porque o array já está na GPU)
-    set_bnd_kernel<<<numBlocks, threadsPerBlock>>>(M, N, O, 0, h_div);
-    cudaDeviceSynchronize();
+    //set_bnd_kernel<<<numBlocks, threadsPerBlock>>>(M, N, O, 0, h_div);
+    set_bnd(M, N, O, 0, h_div);
 
     // Aplicar condições de contorno (não é preciso chamar o setup porque o array já está na GPU)
-    set_bnd_kernel<<<numBlocks, threadsPerBlock>>>(M, N, O, 0, h_p);
+    //set_bnd_kernel<<<numBlocks, threadsPerBlock>>>(M, N, O, 0, h_p);
+    set_bnd(M, N, O, 0, h_p);
     cudaDeviceSynchronize();
 
     // Resolver equação linear para pressão
     lin_solve(M, N, O, 0, h_p, h_div, 1, 6);
 
     // Atualizar campos de velocidade
-    project_update_velocity_kernel<<<numBlocks, threadsPerBlock>>>(M, N, O, h_u, h_v, h_w, h_p);
+    project_update_velocity_kernel<<<numBlocks2, threadsPerBlock2>>>(M, N, O, h_u, h_v, h_w, h_p);
     cudaDeviceSynchronize();
 
     // Ajustar bordas para os campos de velocidade
     // Aplicar condições de contorno (não é preciso chamar o setup porque o array já está na GPU)
-    set_bnd_kernel<<<numBlocks, threadsPerBlock>>>(M, N, O, 1, h_u);
-    cudaDeviceSynchronize();
+    //set_bnd_kernel<<<numBlocks, threadsPerBlock>>>(M, N, O, 1, h_u);
+    set_bnd(M, N, O, 1, h_u);
 
     // Aplicar condições de contorno (não é preciso chamar o setup porque o array já está na GPU)
-    set_bnd_kernel<<<numBlocks, threadsPerBlock>>>(M, N, O, 2, h_v);
-    cudaDeviceSynchronize();
+    //set_bnd_kernel<<<numBlocks, threadsPerBlock>>>(M, N, O, 2, h_v);
+    set_bnd(M, N, O, 2, h_v);
 
     // Aplicar condições de contorno (não é preciso chamar o setup porque o array já está na GPU)
-    set_bnd_kernel<<<numBlocks, threadsPerBlock>>>(M, N, O, 3, h_w);
+    //set_bnd_kernel<<<numBlocks, threadsPerBlock>>>(M, N, O, 3, h_w);
+    set_bnd(M, N, O, 3, h_w);
     cudaDeviceSynchronize();
 }
 

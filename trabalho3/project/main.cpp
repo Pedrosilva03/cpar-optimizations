@@ -65,12 +65,12 @@ void apply_events(const std::vector<Event> &events) {
   for (const auto &event : events) {
     if (event.type == ADD_SOURCE) {
       // Apply density source at the center of the grid
-      dens[IX(i, j, k)] = event.density;
+      d_dens[IX(i, j, k)] = event.density;
     } else if (event.type == APPLY_FORCE) {
       // Apply forces based on the event's vector (fx, fy, fz)
-      u[IX(i, j, k)] = event.force.x;
-      v[IX(i, j, k)] = event.force.y;
-      w[IX(i, j, k)] = event.force.z;
+      d_u[IX(i, j, k)] = event.force.x;
+      d_v[IX(i, j, k)] = event.force.y;
+      d_w[IX(i, j, k)] = event.force.z;
     }
   }
 }
@@ -80,15 +80,13 @@ float sum_density() {
   float total_density = 0.0f;
   int size = (M + 2) * (N + 2) * (O + 2);
   for (int i = 0; i < size; i++) {
-    total_density += dens[i];
+    total_density += d_dens[i];
   }
   return total_density;
 }
 
 // Simulation loop
 void simulate(EventManager &eventManager, int timesteps) {
-  initCudaMalloc(M, N, O);
-  cudaHostToDevice(u, v, w, u_prev, v_prev, w_prev, dens, dens_prev);
   for (int t = 0; t < timesteps; t++) {
     // Get the events for the current timestep
     std::vector<Event> events = eventManager.get_events_at_timestamp(t);
@@ -96,16 +94,10 @@ void simulate(EventManager &eventManager, int timesteps) {
     // Apply events to the simulation
     apply_events(events);
 
-    cudaHostToDevice(u, v, w, nullptr, nullptr, nullptr, dens, nullptr);
-
     // Perform the simulation steps
     vel_step(M, N, O, u, v, w, u_prev, v_prev, w_prev, visc, dt);
     dens_step(M, N, O, dens, dens_prev, u, v, w, diff, dt);
-
-    cudaDeviceToHost(u, v, w, nullptr, nullptr, nullptr, dens, nullptr);
   }
-  cudaDeviceToHost(u, v, w, u_prev, v_prev, w_prev, dens, dens_prev);
-  freeCudaMalloc();
 }
 
 int main() {
@@ -121,6 +113,9 @@ int main() {
     return -1;
   clear_data();
 
+  initCudaMalloc(M, N, O);
+  cudaHostToDevice(u, v, w, u_prev, v_prev, w_prev, dens, dens_prev);
+
   // Run simulation with events
   simulate(eventManager, timesteps);
   
@@ -128,6 +123,8 @@ int main() {
   float total_density = sum_density();
   std::cout << "Total density after " << timesteps
             << " timesteps: " << total_density << std::endl;
+
+  freeCudaMalloc();
 
   // Free memory
   free_data();
