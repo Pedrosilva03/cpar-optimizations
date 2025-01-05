@@ -8,7 +8,7 @@ NVCC = nvcc
 # Flags de otimização
 CFLAGS = -march=native -funroll-loops -ffast-math -fopt-info -Ofast -ftree-vectorize -mavx -pg
 CFLAG_PAR = -fopenmp -msse4.1
-CUDAFLAGS = -O3 -g -use_fast_math -std=c++11 -arch=sm_35 -Wno-deprecated-gpu-targets
+CUDAFLAGS = -Xptxas -O3 -g -use_fast_math -std=c++11 -arch=sm_35 -Wno-deprecated-gpu-targets -restrict
 
 OMP_NUM_THREADS ?= 40
 export OMP_NUM_THREADS
@@ -44,8 +44,11 @@ profile_seq: runseq
 	@echo Profile report generated: callgraph_seq.png
 
 profile_cuda:
-	nvprof --print-gpu-trace ./fluid_sim_cuda
+	nvprof ./fluid_sim_cuda
 	@echo Profile report generated for nvprof
+
+tests:
+	python3 run_tests.py
 
 # Limpeza
 clean:

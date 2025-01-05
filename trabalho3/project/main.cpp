@@ -7,10 +7,12 @@
 
 #define IX(i, j, k) ((i) + (M + 2) * (j) + (M + 2) * (N + 2) * (k))
 
+static int usedSize;
+
 // Globals for the grid size
-static int M = SIZE;
-static int N = SIZE;
-static int O = SIZE;
+static int M;
+static int N;
+static int O;
 static float dt = 0.1f;      // Time delta
 static float diff = 0.0001f; // Diffusion constant
 static float visc = 0.0001f; // Viscosity constant
@@ -21,6 +23,9 @@ static float *dens, *dens_prev;
 
 // Function to allocate simulation data
 int allocate_data() {
+  M = usedSize;
+  N = usedSize;
+  O = usedSize;
   int size = (M + 2) * (N + 2) * (O + 2);
   u = new float[size];
   v = new float[size];
@@ -100,7 +105,9 @@ void simulate(EventManager &eventManager, int timesteps) {
   }
 }
 
-int main() {
+int main(int argc, char* argv[]) {
+  if(argc == 1) usedSize = SIZE;
+  else sscanf(argv[1], "%d", &usedSize);
   // Initialize EventManager
   EventManager eventManager;
   eventManager.read_events("events.txt");
