@@ -17,4 +17,4 @@ Este projeto foi dividido em três fases:
 - WA3: Modificação do código para incorporação de paralelismo utilizando kernels CUDA
 
 ## Conclusão
-- Trabalho realizado por Pedro Silva, Diogo Barros e Rita Lino
+Trabalho realizado por Pedro Silva, Diogo Barros e Rita Lino
