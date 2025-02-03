@@ -7,7 +7,8 @@ Aplicação de diversas técnicas de otimização sobre um programa:
 - Profiling para análise de performance
 
 ## Notas do projeto
-Todas as três fases foram testadas num cluster, o ficheiro batch fornecido serve para automatizar isso, pelo que não vai funcionar localmente.
+- Todas as três fases foram testadas num cluster, o ficheiro batch fornecido serve para automatizar isso, pelo que não vai funcionar localmente.
+- O teste dos programas deverá ser feito localmente utilizando as makefiles fornecidas
 
 ## Fases do projeto
 Este projeto foi dividido em três fases:
